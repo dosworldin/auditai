@@ -1,0 +1,145 @@
+export type Severity = "Critical" | "High" | "Medium" | "Low" | "Info";
+export type RiskLevel = "Critical" | "High" | "Medium" | "Low" | "None";
+export type SafetyDomain =
+  | "legal"
+  | "medical"
+  | "financial"
+  | "fraud"
+  | "security"
+  | "ai-content"
+  | "general";
+
+export interface Evidence {
+  text: string;
+  page?: number;
+  section?: string;
+  available: boolean;
+}
+
+export interface Finding {
+  id: string;
+  severity: Severity;
+  category: string;
+  title: string;
+  explanation: string;
+  evidence: Evidence;
+  risk: RiskLevel;
+  recommendation: string;
+  confidence: number;
+  rule: string;
+}
+
+export interface DocStats {
+  characters: number;
+  words: number;
+  lines: number;
+  pages?: number;
+  estimatedReadTimeSeconds: number;
+  inputType: string;
+  usedOcr: boolean;
+  ocrRequired: boolean;
+  truncated: boolean;
+}
+
+export interface MissingInfo {
+  item: string;
+  explanation: string;
+  severity: Severity;
+}
+
+export interface Recommendation {
+  text: string;
+  priority: "Critical" | "High" | "Medium" | "Low" | "Info";
+}
+
+export interface ReportConfidence {
+  overall: number;
+  notes: string[];
+}
+
+export interface AuditReport {
+  toolSlug: string;
+  toolName: string;
+  status: "ok" | "error";
+  error?: string;
+  generatedAt: string;
+  documentName: string;
+  safetyDomain: SafetyDomain;
+  phase: "logic-v1";
+  summary: string;
+  riskScore: number;
+  riskLabel: "Low" | "Medium" | "High" | "Critical";
+  criticalFindings: Finding[];
+  findings: Finding[];
+  evidenceList: { excerpt: string; page?: number; section?: string; findingId: string }[];
+  recommendations: Recommendation[];
+  missingInformation: MissingInfo[];
+  documentStats: DocStats;
+  confidence: ReportConfidence;
+  disclaimer: string;
+  detectedDocumentType?: string;
+  classificationNote?: string;
+  ocrNotice?: string;
+}
+
+export interface AuditRunPayload {
+  toolSlug: string;
+  documentName?: string;
+  file?: { name: string; kind: string; base64: string };
+  url?: string;
+  text?: string;
+  config?: Record<string, string | number | boolean>;
+}
+
+export interface ExtractionResult {
+  text: string;
+  inputType: string;
+  pages?: number;
+  usedOcr: boolean;
+  ocrRequired: boolean;
+  ocrAttempted: boolean;
+  ocrNotice?: string;
+  truncated: boolean;
+  sourceDescription: string;
+}
+
+/* ----------------------------- Labs ----------------------------- */
+
+export type LabStatus =
+  | "EXPERIMENTAL"
+  | "BETA"
+  | "ACTIVE"
+  | "DISABLED"
+  | "ARCHIVED";
+
+export interface LabFinding {
+  id: string;
+  label: string;
+  detail: string;
+  evidence?: string;
+  severity: Severity;
+  confidence: number;
+}
+
+export interface LabOutput {
+  labSlug: string;
+  labName: string;
+  version: string;
+  status: LabStatus;
+  isolated: boolean;
+  generatedAt: string;
+  inputType: string;
+  summary: string;
+  metrics: Record<string, string | number>;
+  findings: LabFinding[];
+  notes: string[];
+  disclaimer: string;
+}
+
+export interface LabRunPayload {
+  labSlug: string;
+  file?: { name: string; kind: string; base64: string };
+  url?: string;
+  text?: string;
+  config?: Record<string, string | number | boolean>;
+}
