@@ -1,117 +1,143 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Download, FileText, FolderOpen } from "lucide-react";
+import { FileText, FolderOpen, Loader2 } from "lucide-react";
 import { Container } from "@/components/layout/Container";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
-import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/Feedback";
 import { Table, Td, Th } from "@/components/ui/Table";
 import { RiskBadge } from "@/components/ui/Badge";
-import { TOOL_REGISTRY } from "@/lib/tools/registry";
+import { RequireAuth } from "@/components/auth/RequireAuth";
+import { getSupabaseBrowser } from "@/lib/db/supabase-browser";
+
+interface Report {
+  id: string;
+  tool_name: string;
+  tool_slug: string;
+  document_name: string | null;
+  risk_score: number;
+  risk_label: string;
+  summary: string | null;
+  findings_count: number;
+  critical_count: number;
+  created_at: string;
+}
 
 export default function ReportsPage() {
-  const [saved, setSaved] = useState(false);
+  const [reports, setReports] = useState<Report[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadReports() {
+      try {
+        const supabase = getSupabaseBrowser();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          setLoading(false);
+          return;
+        }
+
+        const { data } = await supabase
+          .from("audit_reports")
+          .select("id, tool_name, tool_slug, document_name, risk_score, risk_label, summary, findings_count, critical_count, created_at")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false })
+          .limit(50);
+
+        setReports((data as unknown as Report[]) ?? []);
+      } catch {
+        // Failed to load
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadReports();
+  }, []);
 
   return (
-    <Container className="py-8">
-      <PageHeader
-        title="Reports"
-        description="Your generated audit reports, saved for reference and sharing."
-        icon={<FileText className="h-5 w-5" />}
-        actions={
-          <Link href="/tools">
-            <Button>
-              <FolderOpen className="h-4 w-4" /> Generate a report
-            </Button>
-          </Link>
-        }
-      />
+    <RequireAuth>
+      <Container className="py-8">
+        <PageHeader
+          title="Reports"
+          description="Your generated audit reports, saved for reference and sharing."
+          icon={<FileText className="h-5 w-5" />}
+          actions={
+            <Link href="/tools">
+              <Button>
+                <FolderOpen className="h-4 w-4" /> Generate a report
+              </Button>
+            </Link>
+          }
+        />
 
-      {saved ? (
-        <Card>
-          <Table
-            head={
-              <>
-                <Th>Report</Th>
-                <Th>Tool</Th>
-                <Th>Risk</Th>
-                <Th>Generated</Th>
-                <Th className="text-right">Actions</Th>
-              </>
-            }
-          >
-            {TOOL_REGISTRY.slice(0, 4).map((tool, i) => (
-              <tr key={tool.slug}>
-                <Td className="font-medium text-foreground">
-                  {tool.name} - Sample {i + 1}
-                </Td>
-                <Td>
-                  <Link
-                    href={`/tools/${tool.slug}`}
-                    className="text-primary hover:underline"
-                  >
-                    {tool.name}
-                  </Link>
-                </Td>
-                <Td>
-                  <RiskBadge risk={i % 2 === 0 ? "Low" : "Medium"} />
-                </Td>
-                <Td className="text-muted-foreground">2026-08-09</Td>
-                <Td className="text-right">
-                  <div className="flex items-center justify-end gap-2">
-                    <Link href={`/reports/sample-${tool.slug}`}>
-                      <Button variant="ghost" size="sm">
-                        Open
-                      </Button>
-                    </Link>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        setSaved((prev) => prev && i !== 0 ? prev : true)
-                      }
+        {loading ? (
+          <Card>
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              <span className="ml-2 text-muted-foreground">Loading reports...</span>
+            </div>
+          </Card>
+        ) : reports.length > 0 ? (
+          <Card>
+            <Table
+              head={
+                <>
+                  <Th>Report</Th>
+                  <Th>Tool</Th>
+                  <Th>Risk</Th>
+                  <Th>Findings</Th>
+                  <Th>Generated</Th>
+                  <Th className="text-right">Actions</Th>
+                </>
+              }
+            >
+              {reports.map((report) => (
+                <tr key={report.id}>
+                  <Td className="font-medium text-foreground">
+                    {report.document_name ?? report.tool_name}
+                  </Td>
+                  <Td>
+                    <Link
+                      href={`/tools/${report.tool_slug}`}
+                      className="text-primary hover:underline"
                     >
-                      <Download className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </Td>
-              </tr>
-            ))}
-          </Table>
-          <div className="border-t border-border px-5 py-3">
-            <p className="text-xs text-muted-foreground">
-              Sample reports are illustrative. Report storage and export are
-              implemented in a future phase.
-            </p>
-          </div>
-        </Card>
-      ) : (
-        <EmptyState
-          icon={<FileText className="h-6 w-6" />}
-          title="No saved reports"
-          description="Reports you generate and save will appear here. You can also open a blueprint preview report to see the structure."
-          action={
-            <div className="flex gap-2">
+                      {report.tool_name}
+                    </Link>
+                  </Td>
+                  <Td>
+                    <RiskBadge risk={report.risk_label as "Low" | "Medium" | "High" | "None"} />
+                  </Td>
+                  <Td className="text-muted-foreground">
+                    {report.findings_count} ({report.critical_count} critical)
+                  </Td>
+                  <Td className="text-muted-foreground">
+                    {new Date(report.created_at).toLocaleDateString()}
+                  </Td>
+                  <Td className="text-right">
+                    <Link href={`/reports/${report.id}`}>
+                      <Button variant="ghost" size="sm">Open</Button>
+                    </Link>
+                  </Td>
+                </tr>
+              ))}
+            </Table>
+          </Card>
+        ) : (
+          <EmptyState
+            icon={<FileText className="h-6 w-6" />}
+            title="No saved reports"
+            description="Reports you generate will appear here. Run an audit from the tools catalog to get started."
+            action={
               <Link href="/tools">
                 <Button size="sm">Run an audit</Button>
               </Link>
-              <Link href="/reports/sample-contract-watchdog">
-                <Button size="sm" variant="outline">
-                  Preview a sample report
-                </Button>
-              </Link>
-            </div>
-          }
-        />
-      )}
-
-      <p className="mt-4 text-xs text-muted-foreground">
-        Reports are blueprint previews only; no analysis is performed yet.
-      </p>
-    </Container>
+            }
+          />
+        )}
+      </Container>
+    </RequireAuth>
   );
 }

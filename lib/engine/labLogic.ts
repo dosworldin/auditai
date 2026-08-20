@@ -46,10 +46,7 @@ function countOccurrences(text: string, words: string[]): number {
 
 /* ------------------------------ handlers ------------------------------ */
 
-type Handler = (
-  text: string,
-  config: Record<string, string | number | boolean>,
-) => {
+type HandlerResult = {
   summary: string;
   metrics: Record<string, string | number>;
   findings: LabFinding[];
@@ -57,6 +54,11 @@ type Handler = (
   similarDreams?: import("@/lib/engine/types").SimilarDreamInfo;
   followUp?: DreamFollowUp;
 };
+
+type Handler = (
+  text: string,
+  config: Record<string, string | number | boolean>,
+) => HandlerResult | Promise<HandlerResult>;
 
 function requireText(handler: Handler): Handler {
   return (text, config) => {
@@ -217,7 +219,7 @@ function generateFollowUp(check: DreamDetailCheck, collected: Record<string, str
   };
 }
 
-const dreamAnalyzer: Handler = (text, config) => {
+const dreamAnalyzer: Handler = async (text, config) => {
   const low = text.toLowerCase();
   const words = countWords(text);
 
@@ -349,7 +351,7 @@ const dreamAnalyzer: Handler = (text, config) => {
   /* --- Step 2: Normalize and save to dream database --- */
   const userCountry = (config.country as string) || undefined;
   const normalizedDream = normalizeDream(text, userCountry);
-  const matchResult = saveAndMatch(normalizedDream);
+  const matchResult = await saveAndMatch(normalizedDream);
 
   /* --- Step 3: Build similar dreams finding --- */
   if (matchResult.isReal) {
@@ -382,7 +384,7 @@ const dreamAnalyzer: Handler = (text, config) => {
 
   const similarDreamsInfo = matchResult;
 
-  const totalEntries = getDreamStoreSize();
+  const totalEntries = await getDreamStoreSize();
   metrics.dreamDatabaseSize = totalEntries;
   metrics.similarDreamsFound = matchResult.totalCount;
   metrics.similarDreamsIsReal = matchResult.isReal ? 1 : 0;
@@ -1137,7 +1139,7 @@ export async function runLab(payload: LabRunPayload): Promise<LabOutput> {
       notes: ["Lab outputs are isolated and do not affect production audits."],
     };
   } else {
-    result = handler(text, (payload.config ?? {}) as Record<string, string | number | boolean>);
+    result = await handler(text, (payload.config ?? {}) as Record<string, string | number | boolean>);
   }
 
   const output: LabOutput = {

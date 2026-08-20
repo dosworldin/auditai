@@ -1,151 +1,116 @@
 "use client";
 
-import { useState } from "react";
-import Link from "next/link";
-import { ArrowUpRight, Banknote, Wallet } from "lucide-react";
-import { Container, BlueprintNote } from "@/components/layout/Container";
+import { useState, useEffect } from "react";
+import { Coins, Loader2, Wallet } from "lucide-react";
+import { Container } from "@/components/layout/Container";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader } from "@/components/ui/Card";
-import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Table, Td, Th } from "@/components/ui/Table";
-import { WALLET_ENTRIES } from "@/lib/storyverse/data";
-import { cn } from "@/lib/utils";
+import { RequireAuth } from "@/components/auth/RequireAuth";
+
+interface WalletData {
+  total_earned: number;
+  pending_balance: number;
+  available_balance: number;
+  total_payouts: number;
+  transactions: Array<{
+    type: string;
+    amount: number;
+    description: string;
+    storyId?: string;
+    created_at: string;
+  }>;
+}
 
 export default function StoryVerseWalletPage() {
-  const [pending, setPending] = useState(false);
+  const [wallet, setWallet] = useState<WalletData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/storyverse/wallet")
+      .then((res) => res.json())
+      .then((data) => setWallet(data.wallet))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
 
   return (
-    <Container className="py-8">
-      <PageHeader
-        title="StoryVerse Wallet"
-        description="Track your earnings, purchases, and payout eligibility as a StoryVerse author."
-        icon={<Wallet className="h-5 w-5" />}
-        breadcrumbs={[
-          { label: "StoryVerse", href: "/storyverse" },
-          { label: "Wallet" },
-        ]}
-      />
+    <RequireAuth>
+      <Container className="py-8">
+        <PageHeader
+          title="Author Wallet"
+          description="Track your StoryVerse earnings, revenue shares, and payouts."
+          icon={<Wallet className="h-5 w-5" />}
+        />
 
-      <div className="mb-6">
-        <BlueprintNote>
-          Wallet data shown is from the in-memory StoryVerse engine store.
-          Revenue splits: Book sales 30/70 (Platform/Authors), Paid Voting 70/30 (Platform/Authors).
-          Payments and real payout processing remain for future phases.
-        </BlueprintNote>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Card>
-          <CardContent>
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">
-              Available balance
-            </p>
-            <p className="mt-1 text-3xl font-extrabold text-foreground">$84.41</p>
-            <p className="mt-1 text-xs text-muted-foreground">Ready for payout</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent>
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">
-              Lifetime earnings
-            </p>
-            <p className="mt-1 text-3xl font-extrabold text-success">$296.80</p>
-            <p className="mt-1 text-xs text-muted-foreground">Across 3 published works</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent>
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">
-              Pending payout
-            </p>
-            <p className="mt-1 text-3xl font-extrabold text-warning">$50.00</p>
-            <p className="mt-1 text-xs text-muted-foreground">Awaiting withdrawal approval</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="mt-6 grid gap-6 lg:grid-cols-3">
-        <div className="space-y-6 lg:col-span-2">
-          <Card>
-            <CardHeader
-              title="Transaction history"
-              subtitle="Earnings, purchases and withdrawals"
-            />
-            <Table
-              head={
-                <>
-                  <Th>Description</Th>
-                  <Th>Date</Th>
-                  <Th className="text-right">Amount</Th>
-                </>
-              }
-            >
-              {WALLET_ENTRIES.map((entry) => (
-                <tr key={entry.id}>
-                  <Td className="font-medium text-foreground">
-                    {entry.description}
-                  </Td>
-                  <Td className="text-muted-foreground">{entry.date}</Td>
-                  <Td
-                    className={cn(
-                      "text-right font-semibold",
-                      entry.amount.startsWith("+")
-                        ? "text-success"
-                        : "text-foreground",
-                    )}
-                  >
-                    {entry.amount}
-                  </Td>
-                </tr>
-              ))}
-            </Table>
-          </Card>
-        </div>
-
-        <div className="space-y-6">
-          <Card>
-            <CardHeader title="Payout" />
-            <CardContent className="space-y-3">
-              <div className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">
-                Withdrawals require a verified payout method. Minimum payout:
-                $10.00.
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <div className="grid gap-6 lg:grid-cols-3">
+            <div className="space-y-6 lg:col-span-2">
+              <div className="grid gap-4 sm:grid-cols-3">
+                <Card>
+                  <CardContent className="text-center">
+                    <p className="text-xs uppercase text-muted-foreground">Total earned</p>
+                    <p className="mt-1 text-2xl font-bold text-foreground">${(wallet?.total_earned ?? 0).toFixed(2)}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="text-center">
+                    <p className="text-xs uppercase text-muted-foreground">Available</p>
+                    <p className="mt-1 text-2xl font-bold text-success">${(wallet?.available_balance ?? 0).toFixed(2)}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="text-center">
+                    <p className="text-xs uppercase text-muted-foreground">Pending</p>
+                    <p className="mt-1 text-2xl font-bold text-warning">${(wallet?.pending_balance ?? 0).toFixed(2)}</p>
+                  </CardContent>
+                </Card>
               </div>
-              <Button
-                variant={pending ? "outline" : "primary"}
-                className="w-full"
-                onClick={() => setPending(true)}
-              >
-                <Banknote className="h-4 w-4" /> Request withdrawal
-              </Button>
-              {pending ? (
-                <p className="text-sm text-warning animate-fade-in">
-                  Blueprint: withdrawal requested (simulated). Payouts land in a
-                  future phase.
-                </p>
-              ) : null}
-            </CardContent>
-          </Card>
 
-          <Card>
-            <CardHeader title="Revenue rules" />
-            <CardContent className="space-y-2 text-sm text-muted-foreground">
-              <p>Publication revenue is shared with the primary author.</p>
-              <p>Canon contributors earn attribution-based bonuses.</p>
-              <p>Readers can purchase chapters and full works.</p>
-              <p>
-                Precise share rules are documented in a future phase.
-              </p>
-            </CardContent>
-          </Card>
+              <Card>
+                <CardHeader title="Recent transactions" />
+                {(wallet?.transactions ?? []).length > 0 ? (
+                  <Table head={<><Th>Type</Th><Th>Description</Th><Th className="text-right">Amount</Th></>}>
+                    {(wallet?.transactions ?? []).slice(0, 20).map((tx, i) => (
+                      <tr key={i}>
+                        <Td className="text-sm">{tx.type}</Td>
+                        <Td className="text-sm text-muted-foreground">{tx.description}</Td>
+                        <Td className={`text-right text-sm font-medium ${tx.amount >= 0 ? "text-success" : "text-destructive"}`}>
+                          {tx.amount >= 0 ? "+" : ""}{tx.amount.toFixed(2)}
+                        </Td>
+                      </tr>
+                    ))}
+                  </Table>
+                ) : (
+                  <CardContent className="text-sm text-muted-foreground">No transactions yet.</CardContent>
+                )}
+              </Card>
+            </div>
 
-          <Link href="/storyverse/marketplace">
-            <Button variant="outline" className="w-full">
-              <ArrowUpRight className="h-4 w-4" /> Browse marketplace
-            </Button>
-          </Link>
-        </div>
-      </div>
-    </Container>
+            <div className="space-y-6">
+              <Card>
+                <CardHeader title="Actions" />
+                <CardContent className="space-y-2">
+                  <Button className="w-full" variant="outline" disabled>Request payout (coming soon)</Button>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader title="Revenue model" />
+                <CardContent className="text-sm text-muted-foreground space-y-1">
+                  <p>Book sales: 30% platform / 70% author pool</p>
+                  <p>Paid voting: 70% platform / 30% author pool</p>
+                  <p>Revenue is distributed per your frozen publication snapshot.</p>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        )}
+      </Container>
+    </RequireAuth>
   );
 }

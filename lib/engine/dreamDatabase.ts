@@ -1,13 +1,10 @@
 /**
- * In-memory dream database for the Dream AI Analyzer.
- *
- * Simulates the labs_dream_entries / labs_dream_symbols / labs_dream_analysis
- * tables described in the registry.  Persistence is deferred — this module
- * keeps data for the lifetime of the process, which is fine for the blueprint
- * phase.  When real DB persistence is added later, swap the internal arrays
- * for Convex queries/mutations.
+ * Supabase-backed dream database for Dream AI Analyzer.
+ * Replaces the in-memory dreamDatabase.ts store with real DB queries.
+ * Preserves all existing matching logic and similarity scoring.
  */
 
+import { getSupabaseAdmin } from "@/lib/db/supabase-server";
 import type { SimilarDreamInfo } from "@/lib/engine/types";
 
 /* ------------------------------------------------------------------ */
@@ -16,34 +13,22 @@ import type { SimilarDreamInfo } from "@/lib/engine/types";
 
 export interface NormalizedDream {
   id: string;
-  /** Original narrative text provided by the user. */
   narrative: string;
-  /** Detected/extracted symbol names. */
   symbols: string[];
-  /** Detected emotions. */
   emotions: string[];
-  /** Detected context patterns / themes. */
   themes: string[];
-  /** Objects mentioned (from symbol/keyword detection). */
   objects: string[];
-  /** People / entities mentioned. */
   entities: string[];
-  /** Locations mentioned. */
   locations: string[];
-  /** Actions / events. */
   actions: string[];
-  /** How the dream ended (last ~3 sentences). */
   ending: string;
-  /** User-provided country / location metadata. */
   country?: string;
-  /** Semantic token bag used for similarity scoring. */
   tokenBag: string[];
-  /** When the entry was created. */
   createdAt: string;
 }
 
 /* ------------------------------------------------------------------ */
-/*  Keyword banks (re-used from labLogic, but kept minimal here)       */
+/*  Keyword banks                                                      */
 /* ------------------------------------------------------------------ */
 
 const SYMBOL_KEYWORDS: Record<string, string[]> = {
@@ -106,189 +91,6 @@ const LOCATION_KEYWORDS = [
 ];
 
 /* ------------------------------------------------------------------ */
-/*  Sample seed data (clearly labelled as example data)                */
-/* ------------------------------------------------------------------ */
-
-const SEED_DREAMS: NormalizedDream[] = [
-  {
-    id: "seed-001",
-    narrative: "I was flying over a neon city at night, feeling free and weightless.",
-    symbols: ["flying", "house"],
-    emotions: ["joy", "empowerment"],
-    themes: ["transition"],
-    objects: ["neon lights"],
-    entities: [],
-    locations: ["city", "sky"],
-    actions: ["flying"],
-    ending: "I soared higher until I woke up feeling refreshed.",
-    country: "India",
-    tokenBag: ["fly", "flying", "city", "night", "neon", "free", "weightless", "soar", "soared", "sky", "joy", "empowerment", "transition"],
-    createdAt: "2025-12-01T10:00:00Z",
-  },
-  {
-    id: "seed-002",
-    narrative: "I was flying high above the clouds, looking down at a tiny city below.",
-    symbols: ["flying"],
-    emotions: ["joy", "empowerment"],
-    themes: ["transition"],
-    objects: ["clouds"],
-    entities: [],
-    locations: ["city", "sky"],
-    actions: ["flying", "looking"],
-    ending: "I floated down gently and landed in a garden.",
-    country: "Canada",
-    tokenBag: ["fly", "flying", "high", "clouds", "city", "tiny", "below", "float", "landed", "garden", "joy", "empowerment", "transition"],
-    createdAt: "2025-12-15T14:30:00Z",
-  },
-  {
-    id: "seed-003",
-    narrative: "I dreamed I could fly, soaring over mountains and rivers. I felt so powerful.",
-    symbols: ["flying", "water"],
-    emotions: ["empowerment", "joy"],
-    themes: ["transformation"],
-    objects: [],
-    entities: [],
-    locations: ["mountain", "river", "sky"],
-    actions: ["flying", "soaring"],
-    ending: "I flew back home and woke up smiling.",
-    country: "India",
-    tokenBag: ["fly", "flying", "soar", "soaring", "mountains", "rivers", "powerful", "home", "smiling", "empowerment", "joy", "transformation"],
-    createdAt: "2026-01-05T09:15:00Z",
-  },
-  {
-    id: "seed-004",
-    narrative: "I was chasing a silver key through a dark forest. The trees were whispering my name.",
-    symbols: ["chase", "animals"],
-    emotions: ["fear", "confusion"],
-    themes: ["pursuit"],
-    objects: ["key"],
-    entities: [],
-    locations: ["forest"],
-    actions: ["chasing", "whispering"],
-    ending: "I found the key but the lock had disappeared.",
-    country: "United States",
-    tokenBag: ["chasing", "chase", "key", "silver", "dark", "forest", "trees", "whispering", "name", "found", "lock", "disappeared", "fear", "confusion", "pursuit"],
-    createdAt: "2026-01-10T20:00:00Z",
-  },
-  {
-    id: "seed-005",
-    narrative: "I was in an exam hall but I hadn't studied. The questions were in a language I couldn't read.",
-    symbols: ["exams"],
-    emotions: ["fear", "confusion"],
-    themes: ["pursuit"],
-    objects: ["exam paper"],
-    entities: ["stranger"],
-    locations: ["school", "classroom"],
-    actions: ["sitting", "reading"],
-    ending: "The bell rang and I woke up in a cold sweat.",
-    country: "United Kingdom",
-    tokenBag: ["exam", "examination", "hall", "studied", "questions", "language", "read", "bell", "rang", "woke", "cold", "sweat", "fear", "confusion", "pursuit"],
-    createdAt: "2026-01-20T07:30:00Z",
-  },
-  {
-    id: "seed-006",
-    narrative: "I was at a crowded party and suddenly realized I was completely naked. Everyone was staring.",
-    symbols: ["naked"],
-    emotions: ["fear", "confusion"],
-    themes: ["transformation"],
-    objects: [],
-    entities: ["people"],
-    locations: ["room"],
-    actions: ["staring"],
-    ending: "I woke up embarrassed but relieved it was a dream.",
-    country: "India",
-    tokenBag: ["crowded", "party", "naked", "nobody", "clothes", "staring", "everyone", "embarrassed", "relieved", "fear", "confusion", "transformation"],
-    createdAt: "2026-02-01T11:00:00Z",
-  },
-  {
-    id: "seed-007",
-    narrative: "My teeth started falling out one by one in front of a mirror. I tried to hold them in.",
-    symbols: ["teeth", "mirror"],
-    emotions: ["fear", "sadness"],
-    themes: ["transformation"],
-    objects: ["teeth", "mirror"],
-    entities: [],
-    locations: ["bathroom"],
-    actions: ["falling", "holding"],
-    ending: "I woke up touching my teeth to make sure they were still there.",
-    country: "India",
-    tokenBag: ["teeth", "tooth", "falling", "out", "mirror", "hold", "held", "bathroom", "touching", "fear", "sadness", "transformation"],
-    createdAt: "2026-02-10T06:45:00Z",
-  },
-  {
-    id: "seed-008",
-    narrative: "I was being chased through narrow streets by something I couldn't see. I was running so fast.",
-    symbols: ["chase"],
-    emotions: ["fear"],
-    themes: ["pursuit"],
-    objects: [],
-    entities: [],
-    locations: ["road", "city"],
-    actions: ["chasing", "running"],
-    ending: "I turned a corner and there was a dead end. Then I woke up.",
-    country: "India",
-    tokenBag: ["chased", "chasing", "narrow", "streets", "something", "running", "fast", "corner", "dead", "end", "fear", "pursuit"],
-    createdAt: "2026-02-15T22:10:00Z",
-  },
-  {
-    id: "seed-009",
-    narrative: "I found a chest full of gold coins buried under a tree in my grandmother's garden.",
-    symbols: ["money"],
-    emotions: ["joy", "surprise"],
-    themes: ["discovery"],
-    objects: ["chest", "gold", "coins", "tree"],
-    entities: ["grandmother"],
-    locations: ["garden"],
-    actions: ["finding", "digging", "buried"],
-    ending: "I woke up feeling rich and happy.",
-    country: "Canada",
-    tokenBag: ["found", "chest", "gold", "coins", "buried", "tree", "grandmother", "garden", "digging", "rich", "happy", "joy", "surprise", "discovery"],
-    createdAt: "2026-03-01T08:20:00Z",
-  },
-  {
-    id: "seed-010",
-    narrative: "I was falling endlessly into a deep dark ocean. I couldn't breathe.",
-    symbols: ["water", "falling"],
-    emotions: ["fear"],
-    themes: ["transformation"],
-    objects: [],
-    entities: [],
-    locations: ["ocean", "underwater"],
-    actions: ["falling", "drowning"],
-    ending: "I hit the bottom and everything went black.",
-    country: "Australia",
-    tokenBag: ["falling", "endlessly", "deep", "dark", "ocean", "breathe", "water", "underwater", "hit", "bottom", "black", "fear", "transformation"],
-    createdAt: "2026-03-10T03:15:00Z",
-  },
-  {
-    id: "seed-011",
-    narrative: "I was flying over a neon city with a silver key in my hand. The city glowed beneath me.",
-    symbols: ["flying", "house"],
-    emotions: ["joy", "empowerment"],
-    themes: ["transition"],
-    objects: ["key", "neon"],
-    entities: [],
-    locations: ["city", "sky"],
-    actions: ["flying"],
-    ending: "I soared higher and the city became tiny like a toy.",
-    country: "India",
-    tokenBag: ["fly", "flying", "neon", "city", "key", "silver", "glow", "glowed", "beneath", "soar", "soared", "tiny", "toy", "joy", "empowerment", "transition"],
-    createdAt: "2026-03-15T15:00:00Z",
-  },
-];
-
-/* ------------------------------------------------------------------ */
-/*  In-memory store                                                    */
-/* ------------------------------------------------------------------ */
-
-let dreamStore: NormalizedDream[] = [...SEED_DREAMS];
-let nextId = SEED_DREAMS.length + 1;
-
-function generateId(): string {
-  return `dream-${String(nextId++).padStart(4, "0")}`;
-}
-
-/* ------------------------------------------------------------------ */
 /*  Normalization                                                      */
 /* ------------------------------------------------------------------ */
 
@@ -300,10 +102,7 @@ function tokenize(text: string): string[] {
     .filter((w) => w.length >= 3);
 }
 
-function extractKeywords(
-  text: string,
-  keywordMap: Record<string, string[]>,
-): string[] {
+function extractKeywords(text: string, keywordMap: Record<string, string[]>): string[] {
   const low = text.toLowerCase();
   const found: string[] = [];
   for (const [label, keywords] of Object.entries(keywordMap)) {
@@ -319,49 +118,29 @@ function extractKeywordList(text: string, keywords: string[]): string[] {
   return keywords.filter((k) => low.includes(k));
 }
 
-function extractFromText(text: string, keywords: string[]): string[] {
-  const low = text.toLowerCase();
-  return keywords.filter((k) => {
-    const words = k.split(/\s+/);
-    return words.every((w) => low.includes(w));
-  });
-}
-
-export function normalizeDream(
-  narrative: string,
-  country?: string,
-): NormalizedDream {
+export function normalizeDream(narrative: string, country?: string): NormalizedDream {
   const symbols = extractKeywords(narrative, SYMBOL_KEYWORDS);
   const emotions = extractKeywords(narrative, EMOTION_KEYWORDS);
   const themes = extractKeywords(narrative, THEME_KEYWORDS);
   const entities = extractKeywordList(narrative, ENTITY_KEYWORDS);
   const actions = extractKeywordList(narrative, ACTION_KEYWORDS);
   const locations = extractKeywordList(narrative, LOCATION_KEYWORDS);
-
-  // Objects: combine symbol matches + entity matches
   const objects = [...new Set([...symbols, ...entities])];
 
-  // Ending: last 2-3 sentences
   const sentences = narrative
     .replace(/\s+/g, " ")
     .split(/(?<=[.!?])\s+/)
     .filter((s) => s.trim().length > 0);
   const ending = sentences.slice(-2).join(" ");
 
-  // Token bag: unique tokens from the narrative + all detected labels
   const narrativeTokens = tokenize(narrative);
   const labelTokens = [
-    ...symbols,
-    ...emotions,
-    ...themes,
-    ...entities,
-    ...actions,
-    ...locations,
+    ...symbols, ...emotions, ...themes, ...entities, ...actions, ...locations,
   ].map((l) => l.toLowerCase());
   const tokenBag = [...new Set([...narrativeTokens, ...labelTokens])];
 
   return {
-    id: generateId(),
+    id: "", // Will be set by DB
     narrative,
     symbols,
     emotions,
@@ -381,10 +160,6 @@ export function normalizeDream(
 /*  Similarity scoring                                                 */
 /* ------------------------------------------------------------------ */
 
-/**
- * Jaccard similarity between two token bags, with bonus for shared
- * symbol/emotion/theme labels.
- */
 function similarityScore(a: NormalizedDream, b: NormalizedDream): number {
   const setA = new Set(a.tokenBag);
   const setB = new Set(b.tokenBag);
@@ -392,12 +167,10 @@ function similarityScore(a: NormalizedDream, b: NormalizedDream): number {
   const union = new Set([...setA, ...setB]).size;
   const jaccard = union === 0 ? 0 : intersection / union;
 
-  // Bonus for shared high-level labels
   const sharedSymbols = a.symbols.filter((s) => b.symbols.includes(s)).length;
   const sharedEmotions = a.emotions.filter((e) => b.emotions.includes(e)).length;
   const sharedThemes = a.themes.filter((t) => b.themes.includes(t)).length;
-  const labelBonus =
-    (sharedSymbols * 0.08 + sharedEmotions * 0.05 + sharedThemes * 0.05);
+  const labelBonus = sharedSymbols * 0.08 + sharedEmotions * 0.05 + sharedThemes * 0.05;
 
   return Math.min(1, jaccard + labelBonus);
 }
@@ -405,44 +178,71 @@ function similarityScore(a: NormalizedDream, b: NormalizedDream): number {
 const SIMILARITY_THRESHOLD = 0.32;
 
 /* ------------------------------------------------------------------ */
-/*  Public API                                                         */
+/*  DB operations                                                      */
 /* ------------------------------------------------------------------ */
 
-/**
- * Save a normalized dream to the store and return matching results.
- */
-export function saveAndMatch(
-  dream: NormalizedDream,
-): SimilarDreamInfo {
-  // Check for near-duplicate narratives (same user re-submitting)
-  const existingMatch = dreamStore.find((d) => {
-    if (d.id === dream.id) return false;
-    const a = new Set(tokenize(d.narrative));
-    const b = new Set(tokenize(dream.narrative));
-    const intersection = [...a].filter((t) => b.has(t)).length;
-    const union = new Set([...a, ...b]).size;
-    return union > 0 && intersection / union > 0.75;
-  });
+async function getExistingDreams(): Promise<NormalizedDream[]> {
+  try {
+    const supabase = await getSupabaseAdmin();
+    const { data } = await supabase
+      .from("dream_entries")
+      .select("id, narrative, symbols, emotions, themes, objects, entities, locations, actions, ending, country, normalized_vector, created_at")
+      .order("created_at", { ascending: false })
+      .limit(500);
 
-  if (existingMatch) {
-    // This is essentially the same dream — return the existing match result
-    return findMatchesForDream(existingMatch);
+    if (!data) return [];
+
+    return data.map((row) => ({
+      id: row.id,
+      narrative: row.narrative,
+      symbols: (row.symbols as string[]) ?? [],
+      emotions: (row.emotions as string[]) ?? [],
+      themes: (row.themes as string[]) ?? [],
+      objects: (row.objects as string[]) ?? [],
+      entities: (row.entities as string[]) ?? [],
+      locations: (row.locations as string[]) ?? [],
+      actions: (row.actions as string[]) ?? [],
+      ending: row.ending ?? "",
+      country: row.country ?? undefined,
+      tokenBag: ((row.normalized_vector as Record<string, unknown>)?.tokenBag as string[]) ?? [],
+      createdAt: row.created_at,
+    }));
+  } catch {
+    return [];
   }
-
-  // Save the new dream
-  dreamStore.push(dream);
-
-  // Find matches for the newly saved dream
-  return findMatchesForDream(dream);
 }
 
-/**
- * Find matching dreams in the store (excluding the dream itself).
- */
+async function saveDreamToDB(dream: NormalizedDream): Promise<string> {
+  try {
+    const supabase = await getSupabaseAdmin();
+    const { data } = await supabase
+      .from("dream_entries")
+      .insert({
+        narrative: dream.narrative,
+        symbols: dream.symbols,
+        emotions: dream.emotions,
+        themes: dream.themes,
+        objects: dream.objects,
+        entities: dream.entities,
+        locations: dream.locations,
+        actions: dream.actions,
+        ending: dream.ending,
+        country: dream.country ?? null,
+        normalized_vector: { tokenBag: dream.tokenBag },
+      })
+      .select("id")
+      .single();
+    return data?.id ?? "";
+  } catch {
+    return "";
+  }
+}
+
 function findMatchesForDream(
   target: NormalizedDream,
+  existingDreams: NormalizedDream[],
 ): SimilarDreamInfo {
-  const matches = dreamStore
+  const matches = existingDreams
     .filter((d) => d.id !== target.id)
     .map((d) => ({ dream: d, score: similarityScore(target, d) }))
     .filter((m) => m.score >= SIMILARITY_THRESHOLD)
@@ -451,12 +251,10 @@ function findMatchesForDream(
   const totalCount = matches.length;
 
   if (totalCount === 0) {
-    // No real matches — generate a random/example comparison
     return generateExampleComparison(target);
   }
 
   if (totalCount > 5) {
-    // Aggregate only — do not list individual entries
     const locationMap = new Map<string, number>();
     for (const m of matches) {
       const country = m.dream.country ?? "Unknown";
@@ -466,15 +264,9 @@ function findMatchesForDream(
       .map(([country, count]) => ({ country, count }))
       .sort((a, b) => b.count - a.count);
 
-    return {
-      isReal: true,
-      totalCount,
-      locations,
-      aggregateOnly: true,
-    };
+    return { isReal: true, totalCount, locations, aggregateOnly: true };
   }
 
-  // 1-5 matches — show individual anonymized entries
   const locationMap = new Map<string, number>();
   for (const m of matches) {
     const country = m.dream.country ?? "Unknown";
@@ -484,24 +276,12 @@ function findMatchesForDream(
     .map(([country, count]) => ({ country, count }))
     .sort((a, b) => b.count - a.count);
 
-  return {
-    isReal: true,
-    totalCount,
-    locations,
-    aggregateOnly: false,
-  };
+  return { isReal: true, totalCount, locations, aggregateOnly: false };
 }
 
-/**
- * Generate an example/random comparison when no real matches exist.
- * Always clearly labelled as example data.
- */
 function generateExampleComparison(target: NormalizedDream): SimilarDreamInfo {
-  // Generate plausible example data based on the dream's own symbols
   const exampleCountries = ["India", "Canada", "United States", "United Kingdom", "Australia"];
   const targetCountry = target.country ?? "Unknown";
-
-  // Pick 1-3 example locations including the user's country if possible
   const otherCountries = exampleCountries.filter((c) => c !== targetCountry);
   const picked = otherCountries
     .sort(() => Math.random() - 0.5)
@@ -517,7 +297,6 @@ function generateExampleComparison(target: NormalizedDream): SimilarDreamInfo {
     .map((country) => ({ country, count: Math.floor(Math.random() * 4) + 1 }));
 
   const totalExample = locations.reduce((sum, l) => sum + l.count, 0);
-
   const symbolList = target.symbols.length > 0 ? target.symbols.join(", ") : "similar themes";
 
   return {
@@ -529,37 +308,43 @@ function generateExampleComparison(target: NormalizedDream): SimilarDreamInfo {
   };
 }
 
-/**
- * Get the current store size (for metrics/debugging).
- */
-export function getDreamStoreSize(): number {
-  return dreamStore.length;
+/* ------------------------------------------------------------------ */
+/*  Public API                                                         */
+/* ------------------------------------------------------------------ */
+
+export async function saveAndMatch(dream: NormalizedDream): Promise<SimilarDreamInfo> {
+  const existingDreams = await getExistingDreams();
+
+  // Check for near-duplicate narratives
+  const existingMatch = existingDreams.find((d) => {
+    if (d.id === dream.id) return false;
+    const a = new Set(tokenize(d.narrative));
+    const b = new Set(tokenize(dream.narrative));
+    const intersection = [...a].filter((t) => b.has(t)).length;
+    const union = new Set([...a, ...b]).size;
+    return union > 0 && intersection / union > 0.75;
+  });
+
+  if (existingMatch) {
+    return findMatchesForDream(existingMatch, existingDreams);
+  }
+
+  // Save the new dream
+  const newId = await saveDreamToDB(dream);
+  dream.id = newId;
+  existingDreams.push(dream);
+
+  return findMatchesForDream(dream, existingDreams);
 }
 
-/**
- * Search for similar dreams without saving (for re-submission detection).
- */
-export function searchDreams(
-  tokenBag: string[],
-  threshold = SIMILARITY_THRESHOLD,
-): { dream: NormalizedDream; score: number }[] {
-  const query: NormalizedDream = {
-    id: "",
-    narrative: "",
-    symbols: [],
-    emotions: [],
-    themes: [],
-    objects: [],
-    entities: [],
-    locations: [],
-    actions: [],
-    ending: "",
-    tokenBag,
-    createdAt: "",
-  };
-
-  return dreamStore
-    .map((d) => ({ dream: d, score: similarityScore(query, d) }))
-    .filter((m) => m.score >= threshold)
-    .sort((a, b) => b.score - a.score);
+export async function getDreamStoreSize(): Promise<number> {
+  try {
+    const supabase = await getSupabaseAdmin();
+    const { count } = await supabase
+      .from("dream_entries")
+      .select("id", { count: "exact", head: true });
+    return count ?? 0;
+  } catch {
+    return 0;
+  }
 }

@@ -8,23 +8,9 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { ToolIcon } from "@/components/ui/ToolIcon";
 import { NotFoundState } from "@/components/ui/Feedback";
 import { Button } from "@/components/ui/Button";
+import { RequireAuth } from "@/components/auth/RequireAuth";
 import { LabClient } from "@/components/labs/LabClient";
-import { ComingSoonState } from "@/components/labs/ComingSoonState";
 import { getLab } from "@/lib/labs/registry";
-
-const statusBadge: Record<string, string> = {
-  Experimental: "Experimental",
-  Beta: "Beta",
-  Ready: "Ready",
-  "Coming Soon": "Coming Soon",
-};
-
-const statusTone: Record<string, "info" | "warning" | "success" | "neutral"> = {
-  Experimental: "warning",
-  Beta: "info",
-  Ready: "success",
-  "Coming Soon": "neutral",
-};
 
 export default function LabPage() {
   const params = useParams<{ slug: string }>();
@@ -35,10 +21,10 @@ export default function LabPage() {
       <Container className="py-16">
         <NotFoundState
           title="Lab not found"
-          description={`The experiment "${params.slug}" does not exist.`}
+          description={`The lab "${params.slug}" does not exist.`}
           action={
             <Link href="/labs">
-              <Button>Back to Labs</Button>
+              <Button>Browse all labs</Button>
             </Link>
           }
         />
@@ -47,30 +33,27 @@ export default function LabPage() {
   }
 
   return (
-    <Container className="py-8">
-      <PageHeader
-        title={lab.name}
-        description={lab.description}
-        icon={<ToolIcon icon={lab.icon} accentKey={lab.accent} size="md" />}
-        breadcrumbs={[
-          { label: "Labs", href: "/labs" },
-          { label: lab.category, href: "/labs" },
-          { label: lab.name },
-        ]}
-        actions={
-          <Link href="/labs">
-            <Button variant="outline" size="sm">
-              <ArrowLeft className="h-4 w-4" /> All Labs
-            </Button>
-          </Link>
-        }
-      />
+    <RequireAuth>
+      <Container className="py-8">
+        <PageHeader
+          title={lab.name}
+          description={lab.description}
+          icon={<ToolIcon icon={lab.icon} accentKey={lab.accent} size="md" />}
+          breadcrumbs={[
+            { label: "Labs", href: "/labs" },
+            { label: lab.name },
+          ]}
+          actions={
+            <Link href="/labs">
+              <Button variant="outline" size="sm">
+                <ArrowLeft className="h-4 w-4" /> All labs
+              </Button>
+            </Link>
+          }
+        />
 
-      {lab.comingSoon ? (
-        <ComingSoonState lab={lab} />
-      ) : (
         <LabClient lab={lab} />
-      )}
-    </Container>
+      </Container>
+    </RequireAuth>
   );
 }
