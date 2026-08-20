@@ -111,7 +111,9 @@ insert into public.admin_settings (key, value, category, description) values
   ('storyverse_scoring_canon_wins', '40', 'storyverse', 'Scoring weight: canon wins'),
   ('storyverse_scoring_words', '30', 'storyverse', 'Scoring weight: published words'),
   ('storyverse_scoring_votes', '20', 'storyverse', 'Scoring weight: vote score'),
-  ('storyverse_scoring_participation', '10', 'storyverse', 'Scoring weight: participation')
+  ('storyverse_scoring_participation', '10', 'storyverse', 'Scoring weight: participation'),
+  ('storyverse_ai_editor_enabled', 'true', 'storyverse', 'Enable AI Editor after voting'),
+  ('storyverse_paid_vote_price', '1', 'storyverse', 'Credits cost for paid vote')
 on conflict (key) do nothing;
 
 -- ============================================================================
@@ -596,6 +598,49 @@ create table public.storyverse_abuse_flags (
 );
 
 alter table public.storyverse_abuse_flags enable row level security;
+
+-- ============================================================================
+-- 6.5. STORYVERSE DISCUSSIONS
+-- ============================================================================
+
+create table public.storyverse_discussions (
+  id uuid primary key default uuid_generate_v4(),
+  story_id uuid not null references public.storyverse_stories(id) on delete cascade,
+  user_id uuid not null references public.profiles(id),
+  title text not null,
+  content text not null,
+  is_pinned boolean default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.storyverse_discussions enable row level security;
+
+create policy "Story participants can read discussions"
+  on public.storyverse_discussions for select
+  using (true);
+
+create policy "Contributors can create discussions"
+  on public.storyverse_discussions for insert
+  with check (auth.uid() = user_id);
+
+create table public.storyverse_discussion_replies (
+  id uuid primary key default uuid_generate_v4(),
+  discussion_id uuid not null references public.storyverse_discussions(id) on delete cascade,
+  user_id uuid not null references public.profiles(id),
+  content text not null,
+  created_at timestamptz not null default now()
+);
+
+alter table public.storyverse_discussion_replies enable row level security;
+
+create policy "Anyone can read discussion replies"
+  on public.storyverse_discussion_replies for select
+  using (true);
+
+create policy "Authenticated users can reply"
+  on public.storyverse_discussion_replies for insert
+  with check (auth.uid() = user_id);
 
 -- ============================================================================
 -- 7. SUPPORT TICKETS

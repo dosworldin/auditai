@@ -49,6 +49,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "You are not a contributor to this story" }, { status: 403 });
   }
 
+  // Check contributor agreement
+  const { data: agreement } = await supabase
+    .from("storyverse_contributor_agreements")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("accepted", true)
+    .limit(1)
+    .single();
+
+  if (!agreement) {
+    return NextResponse.json(
+      { error: "You must accept the Contributor Agreement before contributing.", requiresAgreement: true },
+      { status: 403 },
+    );
+  }
+
   // Check if user already contributed to this round
   const { data: existing } = await supabase
     .from("storyverse_contributions")
@@ -85,6 +101,27 @@ export async function POST(request: Request) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  // Check inactivity hold: if story was paused and new contributor joins, reactivate
+  const { data: story } = await supabase
+    .from("storyverse_stories")
+    .select("status, story_type, inactivity_state")
+    .eq("id", storyId)
+    .single();
+
+  if (story?.status === "PAUSED" && (story.story_type === "pool_open" || story.story_type === "pool_private")) {
+    const { count } = await supabase
+      .from("storyverse_contributors")
+      .select("id", { count: "exact", head: true })
+      .eq("story_id", storyId);
+
+    if (count && count > 1) {
+      await supabase
+        .from("storyverse_stories")
+        .update({ status: "ACTIVE", inactivity_state: null, updated_at: new Date().toISOString() })
+        .eq("id", storyId);
+    }
+  }
+
   // Log to ledger
   await supabase.from("storyverse_ledger").insert({
     event_type: "contribution_submitted",
@@ -95,11 +132,20 @@ export async function POST(request: Request) {
     metadata: { wordCount },
   });
 
+  // Update inactivity timestamp
+  await supabase
+    .from("storyverse_stories")
+    .update({
+      inactivity_state: { lastActivityAt: new Date().toISOString() },
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", storyId);
+
   return NextResponse.json({ contribution }, { status: 201 });
 }
 
 /**
- * POST /api/storyverse/contribute/vote — Cast a vote on a contribution.
+ * PUT /api/storyverse/contribute — Cast a vote on a contribution.
  */
 export async function PUT(request: Request) {
   let user;
@@ -157,7 +203,6 @@ export async function PUT(request: Request) {
   // For paid votes, deduct credits
   let creditsCost = 0;
   if (voteType === "paid") {
-    // Get paid vote price from admin settings
     const { data: priceSetting } = await supabase
       .from("admin_settings")
       .select("value")
@@ -173,7 +218,6 @@ export async function PUT(request: Request) {
     await deductCredits(user.id, creditsCost, "storyverse_charge", "Paid vote", contributionId, "storyverse_vote");
   }
 
-  // Calculate weight (could be enhanced with trust/reputation)
   const weight = 1;
 
   // Create vote
@@ -208,5 +252,131 @@ export async function PUT(request: Request) {
     metadata: { voteType, weight, creditsCost },
   });
 
+  // Check if voting period has ended — if so, finalize round and trigger AI Editor
+  if (round.voting_ends_at && new Date(round.voting_ends_at) <= new Date()) {
+    await finalizeRound(supabase, roundId, storyId, round);
+  }
+
   return NextResponse.json({ ok: true, voteType, creditsCost });
+}
+
+/**
+ * Finalize a round: select canon winner, trigger AI Editor, update story.
+ */
+async function finalizeRound(
+  supabase: Awaited<ReturnType<typeof getSupabaseServer>>,
+  roundId: string,
+  storyId: string,
+  round: { round_number: number; chapter_id: string | null },
+) {
+  // Find the winning contribution (most votes)
+  const { data: contributions } = await supabase
+    .from("storyverse_contributions")
+    .select("id, author_id, content, word_count, votes")
+    .eq("round_id", roundId)
+    .order("votes", { ascending: false });
+
+  if (!contributions || contributions.length === 0) return;
+
+  const winner = contributions[0];
+
+  // Update round status
+  await supabase
+    .from("storyverse_rounds")
+    .update({
+      status: "COMPLETE",
+      canon_contribution_id: winner.id,
+      completed_at: new Date().toISOString(),
+    })
+    .eq("id", roundId);
+
+  // Mark winner as canon
+  await supabase
+    .from("storyverse_contributions")
+    .update({ is_canon: true, status: "CANON" })
+    .eq("id", winner.id);
+
+  // Mark others as rejected
+  const otherIds = contributions.slice(1).map((c) => c.id);
+  if (otherIds.length > 0) {
+    await supabase
+      .from("storyverse_contributions")
+      .update({ status: "REJECTED" })
+      .in("id", otherIds);
+  }
+
+  // Create or update chapter content
+  if (round.chapter_id) {
+    // Append canon content to chapter
+    const { data: chapter } = await supabase
+      .from("storyverse_chapters")
+      .select("content, word_count")
+      .eq("id", round.chapter_id)
+      .single();
+
+    const existingContent = chapter?.content ?? "";
+    const newContent = existingContent ? `${existingContent}\n\n${winner.content}` : winner.content;
+    const newWordCount = newContent.split(/\s+/).length;
+
+    await supabase
+      .from("storyverse_chapters")
+      .update({ content: newContent, word_count: newWordCount, updated_at: new Date().toISOString() })
+      .eq("id", round.chapter_id);
+  }
+
+  // Update story's current round
+  await supabase
+    .from("storyverse_stories")
+    .update({ current_round: round.round_number + 1, updated_at: new Date().toISOString() })
+    .eq("id", storyId);
+
+  // Trigger AI Editor for the winning contribution
+  const { data: aiEditorPriceSetting } = await supabase
+    .from("admin_settings")
+    .select("value")
+    .eq("key", "storyverse_ai_editor_price")
+    .single();
+
+  const aiEditorCost = Number(aiEditorPriceSetting?.value ?? 10);
+
+  // Check if AI editor is enabled
+  const { data: aiEnabledSetting } = await supabase
+    .from("admin_settings")
+    .select("value")
+    .eq("key", "storyverse_ai_editor_enabled")
+    .single();
+
+  const aiEnabled = aiEnabledSetting?.value === true || aiEnabledSetting?.value === "true";
+
+  if (aiEnabled) {
+    // Deduct AI Editor credits from author
+    await deductCredits(winner.author_id, aiEditorCost, "ai_editor_charge", `AI Editor: Round ${round.round_number}`, winner.id, "storyverse_ai_editor");
+
+    // Create AI Editor request
+    await supabase
+      .from("storyverse_ai_editor_requests")
+      .insert({
+        story_id: storyId,
+        contribution_id: winner.id,
+        round_id: roundId,
+        author_id: winner.author_id,
+        original_content: winner.content,
+        status: "processing",
+        credits_cost: aiEditorCost,
+      });
+  }
+
+  // Log canon selection
+  await supabase.from("storyverse_ledger").insert({
+    event_type: "round_canon_selected",
+    story_id: storyId,
+    round_id: roundId,
+    contribution_id: winner.id,
+    user_id: winner.author_id,
+    metadata: {
+      votes: winner.votes,
+      wordCount: winner.word_count,
+      aiEditorTriggered: aiEnabled,
+    },
+  });
 }
