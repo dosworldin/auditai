@@ -1,13 +1,16 @@
-import type { LabFinding, LabOutput, LabRunPayload, Severity } from "@/lib/engine/types";
+import type { LabFinding, LabOutput, LabRunPayload, Severity, DreamFollowUp } from "@/lib/engine/types";
 import { extractForAudit } from "@/lib/engine/extract";
 import { countWords, splitLines } from "@/lib/engine/text";
 import { getLab } from "@/lib/labs/registry";
+import { normalizeDream, saveAndMatch, getDreamStoreSize } from "@/lib/engine/dreamDatabase";
 
-export type LabStatus = "EXPERIMENTAL" | "BETA" | "ACTIVE" | "DISABLED" | "ARCHIVED";
+export type LabStatus = "EXPERIMENTAL" | "BETA" | "ACTIVE" | "DISABLED" | "ARCHIVED" | "READY" | "COMING_SOON";
 
 const STATUS_MAP: Record<string, LabStatus> = {
   Experimental: "EXPERIMENTAL",
   Beta: "BETA",
+  Ready: "READY",
+  "Coming Soon": "COMING_SOON",
 };
 
 function statusFor(labSlug: string): LabStatus {
@@ -23,6 +26,7 @@ function lf(input: {
   severity?: Severity;
   confidence?: number;
   evidence?: string;
+  copiableText?: string;
 }): LabFinding {
   return {
     id: input.id,
@@ -31,6 +35,7 @@ function lf(input: {
     severity: input.severity ?? "Info",
     confidence: input.confidence ?? 0.6,
     ...(input.evidence ? { evidence: input.evidence } : {}),
+    ...(input.copiableText ? { copiableText: input.copiableText } : {}),
   };
 }
 
@@ -44,7 +49,14 @@ function countOccurrences(text: string, words: string[]): number {
 type Handler = (
   text: string,
   config: Record<string, string | number | boolean>,
-) => { summary: string; metrics: Record<string, string | number>; findings: LabFinding[]; notes: string[] };
+) => {
+  summary: string;
+  metrics: Record<string, string | number>;
+  findings: LabFinding[];
+  notes: string[];
+  similarDreams?: import("@/lib/engine/types").SimilarDreamInfo;
+  followUp?: DreamFollowUp;
+};
 
 function requireText(handler: Handler): Handler {
   return (text, config) => {
@@ -67,6 +79,596 @@ function requireText(handler: Handler): Handler {
     return handler(text, config);
   };
 }
+
+/* =====================================================================
+   DREAM AI ANALYZER
+   ===================================================================== */
+
+/* ------------------------------------------------------------------
+   DREAM AI ANALYZER — Symbol / Emotion banks
+   ------------------------------------------------------------------ */
+
+const DREAM_SYMBOLS: Record<string, string[]> = {
+  "Flying": ["fly", "flying", "soaring", "airborne", "levitat", "float", "wings"],
+  "Water": ["water", "ocean", "sea", "river", "lake", "wave", "flood", "drowning", "swim"],
+  "Teeth falling out": ["teeth", "tooth", "falling out", "crumbling", "loose tooth"],
+  "Being chased": ["chase", "chased", "pursuit", "running from", "fleeing", "being followed"],
+  "Death": ["death", "dying", "dead", "funeral", "grave", "cemetery", "passed away"],
+  "House/Building": ["house", "building", "room", "door", "window", "corridor", "hallway", "home"],
+  "Animals": ["animal", "dog", "cat", "snake", "spider", "bird", "wolf", "lion", "bear", "horse"],
+  "Falling": ["falling", "fall", "dropping", "plummet", "cliff", "edge"],
+  "Naked in public": ["naked", "undressed", "exposed", "embarrass", "clothes missing", "no clothes"],
+  "Exams/Tests": ["exam", "test", "school", "classroom", "unprepared", "late for", "forgot"],
+  "Money": ["money", "cash", "wallet", "find", "winning", "losing money", "rich", "broke"],
+  "Baby/Pregnancy": ["baby", "pregnant", "birth", "child", "infant", "newborn", "pregnancy"],
+  "Journey/Travel": ["journey", "travel", "road", "train", "flight", "airport", "map", "lost"],
+  "Mirror": ["mirror", "reflection", "looking at myself", "mirror image"],
+  "Fire": ["fire", "burning", "flame", "fireball", "blaze", "inferno"],
+};
+
+const DREAM_EMOTIONS: Record<string, string[]> = {
+  "Fear/Anxiety": ["afraid", "scared", "terrified", "anxious", "panic", "dread", "nightmare", "horror"],
+  "Joy/Happiness": ["happy", "joy", "delighted", "excited", "wonderful", "beautiful", "blissful", "love"],
+  "Sadness": ["sad", "cry", "crying", "tears", "miserable", "grief", "mourning", "lonely"],
+  "Anger": ["angry", "furious", "rage", "mad", "frustrated", "irritated", "enraged"],
+  "Confusion": ["confused", "lost", "uncertain", "bizarre", "strange", "weird", "disoriented", "surreal"],
+  "Surprise": ["surprised", "shocked", "unexpected", "sudden", "amazed", "astonished"],
+  "Guilt": ["guilty", "guilt", "regret", "ashamed", "blame", "conscience", "wrong"],
+  "Empowerment": ["powerful", "confident", "strong", "capable", "in control", "free", "liberated"],
+};
+
+const DREAM_CONTEXTS: Record<string, string[]> = {
+  "Transformation": ["transform", "change", "metamorphosis", "becoming", "morph", "shapeshift"],
+  "Loss/Abandonment": ["lost", "abandoned", "alone", "left behind", "missing", "gone", "separated"],
+  "Pursuit/Evasion": ["running", "hiding", "escape", "pursued", "chase", "fleeing"],
+  "Discovery/Revelation": ["discover", "find", "reveal", "secret", "hidden", "found", "uncovered"],
+  "Transition": ["door", "threshold", "crossing", "bridge", "path", "journey", "enter", "exit"],
+  "Communication": ["talking", "saying", "telling", "speaking", "voice", "listen", "call"],
+};
+
+/* ------------------------------------------------------------------
+   DREAM DETAIL CHECKING & FOLLOW-UP QUESTIONS
+   ------------------------------------------------------------------ */
+
+interface DreamDetailCheck {
+  sufficient: boolean;
+  missingFields: string[];
+}
+
+const DREAM_DETAIL_FIELDS = [
+  { key: "narrative", label: "dream narrative", minWords: 15 },
+  { key: "setting", label: "setting / location", keywords: ["in", "at", "on", "inside", "outside", "near", "by", "over", "under"] },
+  { key: "emotions", label: "emotions felt", keywords: ["felt", "feeling", "was scared", "was happy", "was sad", "was angry", "was anxious", "was excited", "was confused", "afraid", "happy", "sad", "angry", "anxious", "excited", "confused", "terrified", "joyful", "peaceful", "nervous"] },
+  { key: "ending", label: "how the dream ended", keywords: ["then", "after", "finally", "woke up", "suddenly", "ended", "woke", "disappeared", "faded"] },
+];
+
+function checkDreamDetail(text: string): DreamDetailCheck {
+  const low = text.toLowerCase();
+  const words = countWords(text);
+  const missingFields: string[] = [];
+
+  // Check narrative length
+  const minWords = DREAM_DETAIL_FIELDS[0].minWords ?? 15;
+  if (words < minWords) {
+    missingFields.push("narrative");
+  }
+
+  // Check setting
+  const hasSetting = DREAM_DETAIL_FIELDS[1].keywords?.some((k) => low.includes(k)) ?? false;
+  if (!hasSetting) {
+    missingFields.push("setting");
+  }
+
+  // Check emotions
+  const hasEmotions = DREAM_DETAIL_FIELDS[2].keywords?.some((k) => low.includes(k)) ?? false;
+  if (!hasEmotions) {
+    missingFields.push("emotions");
+  }
+
+  // Check ending
+  const hasEnding = DREAM_DETAIL_FIELDS[3].keywords?.some((k) => low.includes(k)) ?? false;
+  if (!hasEnding) {
+    missingFields.push("ending");
+  }
+
+  return {
+    sufficient: missingFields.length <= 1, // Allow missing one field
+    missingFields,
+  };
+}
+
+const FOLLOW_UP_QUESTIONS: Record<string, string[]> = {
+  narrative: [
+    "What happened next in the dream?",
+    "Can you describe more of what you saw?",
+    "Were there other events or details you remember?",
+  ],
+  setting: [
+    "Where were you in the dream? (e.g., in a city, at home, in a forest)",
+    "What did the environment look like?",
+    "Were you indoors or outdoors?",
+  ],
+  emotions: [
+    "What emotions did you feel during the dream?",
+    "How did the dream make you feel — scared, happy, anxious, excited?",
+    "Did your feelings change during the dream?",
+  ],
+  ending: [
+    "How did the dream end?",
+    "Did you wake up, or did the dream fade?",
+    "What was the last thing you remember before waking?",
+  ],
+};
+
+function pickFollowUpQuestion(field: string): string {
+  const questions = FOLLOW_UP_QUESTIONS[field] ?? ["Can you tell me more about this part of your dream?"];
+  return questions[Math.floor(Math.random() * questions.length)];
+}
+
+function generateFollowUp(check: DreamDetailCheck, collected: Record<string, string>): DreamFollowUp {
+  // Pick the most important missing field
+  const priority = ["narrative", "setting", "emotions", "ending"];
+  const nextField = priority.find((f) => check.missingFields.includes(f)) ?? check.missingFields[0];
+
+  return {
+    question: pickFollowUpQuestion(nextField),
+    collected,
+    missingFields: check.missingFields,
+  };
+}
+
+const dreamAnalyzer: Handler = (text, config) => {
+  const low = text.toLowerCase();
+  const words = countWords(text);
+
+  /* --- Step 1: Check if dream detail is sufficient --- */
+  const detailCheck = checkDreamDetail(text);
+  const collected: Record<string, string> = { narrative: text };
+
+  /* Detect symbols */
+  const foundSymbols: { name: string; matches: string[] }[] = [];
+  for (const [symbol, keywords] of Object.entries(DREAM_SYMBOLS)) {
+    const matches = keywords.filter((k) => low.includes(k));
+    if (matches.length > 0) foundSymbols.push({ name: symbol, matches });
+  }
+
+  /* Detect emotions */
+  const foundEmotions: { name: string; matches: string[] }[] = [];
+  for (const [emotion, keywords] of Object.entries(DREAM_EMOTIONS)) {
+    const matches = keywords.filter((k) => low.includes(k));
+    if (matches.length > 0) foundEmotions.push({ name: emotion, matches });
+  }
+
+  /* Detect context patterns */
+  const foundContexts: { name: string; matches: string[] }[] = [];
+  for (const [context, keywords] of Object.entries(DREAM_CONTEXTS)) {
+    const matches = keywords.filter((k) => low.includes(k));
+    if (matches.length > 0) foundContexts.push({ name: context, matches });
+  }
+
+  /* Detect setting/environment */
+  const settingKeywords = ["city", "forest", "beach", "mountain", "school", "home", "office", "hospital", "night", "day", "dark", "bright", "sky", "ground"];
+  const settingMatches = settingKeywords.filter((k) => low.includes(k));
+
+  const recallLevel = (config.recallLevel as string) ?? "moderate";
+
+  const summaryParts: string[] = [];
+  summaryParts.push(`Dream analyzed (${words} words, ${recallLevel} recall detail).`);
+  if (foundSymbols.length > 0) {
+    summaryParts.push(`Identified ${foundSymbols.length} symbol(s): ${foundSymbols.map((s) => s.name).join(", ")}.`);
+  }
+  if (foundEmotions.length > 0) {
+    summaryParts.push(`Emotional tone: ${foundEmotions.map((e) => e.name).join(", ")}.`);
+  }
+
+  const findings: LabFinding[] = [];
+
+  /* Symbol findings */
+  for (const sym of foundSymbols) {
+    findings.push(
+      lf({
+        id: `sym-${sym.name.toLowerCase().replace(/[^a-z0-9]/g, "-")}`,
+        label: `Symbol: ${sym.name}`,
+        detail: `The symbol "${sym.name}" appears in your dream narrative. Common dream analysis associates this with themes of ${sym.name.toLowerCase() === "flying" ? "freedom, ambition, and desire to escape" : sym.name.toLowerCase() === "water" ? "emotions, the subconscious, and flow of life" : sym.name.toLowerCase() === "teeth falling out" ? "anxiety about appearance, powerlessness, or change" : sym.name.toLowerCase() === "being chased" ? "avoidance of a problem or running from responsibility" : sym.name.toLowerCase() === "death" ? "endings, transformation, and new beginnings" : sym.name.toLowerCase() === "falling" ? "insecurity, loss of control, or letting go" : "deep personal significance"}.`,
+        severity: "Info",
+        confidence: 0.55,
+        evidence: sym.matches.join(", "),
+      }),
+    );
+  }
+
+  /* Emotion findings */
+  for (const emo of foundEmotions) {
+    findings.push(
+      lf({
+        id: `emo-${emo.name.toLowerCase().replace(/[^a-z0-9]/g, "-")}`,
+        label: `Emotion: ${emo.name}`,
+        detail: `Strong ${emo.name.toLowerCase()} undertones detected in the dream narrative. This emotional pattern may reflect ${emo.name.toLowerCase().includes("fear") || emo.name.toLowerCase().includes("anxiety") ? "waking-life stress or unresolved concerns" : emo.name.toLowerCase().includes("joy") || emo.name.toLowerCase().includes("happiness") ? "positive associations or fulfillment" : emo.name.toLowerCase().includes("sadness") ? "processing grief, loss, or longing" : emo.name.toLowerCase().includes("anger") ? "frustration or unresolved conflict" : "your current emotional state"}.`,
+        severity: "Info",
+        confidence: 0.5,
+        evidence: emo.matches.join(", "),
+      }),
+    );
+  }
+
+  /* Context pattern findings */
+  for (const ctx of foundContexts) {
+    findings.push(
+      lf({
+        id: `ctx-${ctx.name.toLowerCase().replace(/[^a-z0-9]/g, "-")}`,
+        label: `Pattern: ${ctx.name}`,
+        detail: `A "${ctx.name}" pattern is present. This recurring motif in dream analysis suggests ${ctx.name.toLowerCase() === "transformation" ? "you may be processing a significant life change" : ctx.name.toLowerCase() === "loss/abandonment" ? "feelings of insecurity or fear of loss" : ctx.name.toLowerCase() === "discovery/revelation" ? "your mind is working through hidden truths or new awareness" : ctx.name.toLowerCase() === "transition" ? "you stand at a crossroads or are moving between life phases" : "an active processing of life events"}.`,
+        severity: "Info",
+        confidence: 0.45,
+      }),
+    );
+  }
+
+  /* Setting */
+  if (settingMatches.length > 0) {
+    findings.push(
+      lf({
+        id: "dream-setting",
+        label: "Dream Environment",
+        detail: `Setting elements detected: ${settingMatches.join(", ")}. The environment in dreams often represents the dreamer's emotional landscape or current life context.`,
+        severity: "Info",
+        confidence: 0.4,
+      }),
+    );
+  }
+
+  /* Overall */
+  const totalSymbols = foundSymbols.length + foundEmotions.length;
+  if (totalSymbols === 0) {
+    findings.push(
+      lf({
+        id: "dream-no-patterns",
+        label: "Limited pattern detection",
+        detail: "No common dream symbols or emotions were detected. The dream may be highly personal or the description may be too brief.",
+        severity: "Info",
+        confidence: 0.4,
+      }),
+    );
+  }
+
+  const metrics: Record<string, string | number> = {
+    symbolsFound: foundSymbols.length,
+    emotionsDetected: foundEmotions.length,
+    contextPatterns: foundContexts.length,
+    wordCount: words,
+    recallLevel,
+  };
+
+  const notes = [
+    "Dream analysis does not replace professional therapy or psychiatric evaluation.",
+    "This is an experimental entertainment/pattern-matching experience, not a medical diagnosis.",
+    "Symbol interpretations are based on common cultural associations and are not definitive.",
+    "For recurring distressing dreams, consider consulting a mental health professional.",
+  ];
+
+  /* --- Step 2: Normalize and save to dream database --- */
+  const userCountry = (config.country as string) || undefined;
+  const normalizedDream = normalizeDream(text, userCountry);
+  const matchResult = saveAndMatch(normalizedDream);
+
+  /* --- Step 3: Build similar dreams finding --- */
+  if (matchResult.isReal) {
+    const locationStr = matchResult.locations
+      .map((l) => `${l.country} (${l.count})`)
+      .join(", ");
+    findings.push(
+      lf({
+        id: "dream-similar-real",
+        label: "Similar Dreams Found",
+        detail: matchResult.aggregateOnly
+          ? `${matchResult.totalCount} people have reported a similar dream.`
+          : `${matchResult.totalCount} similar dream(s) found: ${locationStr}.`,
+        severity: "Info",
+        confidence: 0.6,
+      }),
+    );
+  } else {
+    findings.push(
+      lf({
+        id: "dream-similar-example",
+        label: "Similar Dream Reports (Example)",
+        detail: `${matchResult.totalCount} example report(s) based on similar dream patterns: ${matchResult.locations.map((l) => `${l.country} (${l.count})`).join(", ")}.`,
+        severity: "Info",
+        confidence: 0.3,
+        evidence: matchResult.exampleDescription ?? "Random example based on available dataset",
+      }),
+    );
+  }
+
+  const similarDreamsInfo = matchResult;
+
+  const totalEntries = getDreamStoreSize();
+  metrics.dreamDatabaseSize = totalEntries;
+  metrics.similarDreamsFound = matchResult.totalCount;
+  metrics.similarDreamsIsReal = matchResult.isReal ? 1 : 0;
+
+  return {
+    summary: summaryParts.join(" "),
+    metrics,
+    findings,
+    notes,
+    similarDreams: similarDreamsInfo,
+  };
+};
+
+/* =====================================================================
+   KALESH ANALYZER
+   ===================================================================== */
+
+const kaleshAnalyzer: Handler = (text, config) => {
+  const mode = (config.analysisMode as string) ?? "neutral";
+  const low = text.toLowerCase();
+  const words = countWords(text);
+
+  /* Detect speakers (Name: or Name said:) */
+  const speakerPattern = /^([A-Za-z][A-Za-z\s.]{1,30}?)[:]/gm;
+  const speakerMatches = text.match(speakerPattern) ?? [];
+  const speakers = [...new Set(speakerMatches.map((s) => s.replace(":", "").trim()))].slice(0, 6);
+
+  /* Detect conflict indicators */
+  const conflictKeywords = [
+    "stupid", "idiot", "shut up", "hate", "never", "always", "you always", "you never",
+    "fine", "whatever", "i don't care", "not my problem", "you started it",
+    "unbelievable", "ridiculous", "seriously", "are you kidding",
+  ];
+  const conflictHits = conflictKeywords.filter((k) => low.includes(k));
+
+  /* Detect gaslighting patterns */
+  const gaslightKeywords = [
+    "that never happened", "you're imagining", "you're overreacting", "you're too sensitive",
+    "i never said that", "you remembered wrong", "that's not what happened",
+    "you're crazy", "you're making this up", "nobody else thinks that",
+    "you're just", "calm down", "you're being dramatic",
+  ];
+  const gaslightHits = gaslightKeywords.filter((k) => low.includes(k));
+
+  /* Detect escalation markers */
+  const escalationKeywords = [
+    "!!!", "caps", "ALL CAPS", "?!?!", "WHY",
+  ];
+  const escalationHits = escalationKeywords.filter((k) => {
+    if (k === "caps") return /[A-Z]{5,}/.test(text);
+    if (k === "ALL CAPS") return text === text.toUpperCase() && words > 5;
+    return text.includes(k);
+  });
+
+  /* Detect passive aggression */
+  const passiveAggKeywords = [
+    "sure", "fine", "if you say so", "whatever", "i guess", "no worries",
+    "it's fine", "i'm fine", "cool", "do what you want",
+  ];
+  const passiveHits = passiveAggKeywords.filter((k) => low.includes(k));
+
+  /* Detect timestamps for conversation flow */
+  const timePattern = /\b\d{1,2}:\d{2}\b/g;
+  const timestamps = text.match(timePattern) ?? [];
+
+  const findings: LabFinding[] = [];
+  const copiableOutputs: string[] = [];
+
+  if (mode === "neutral") {
+    findings.push(
+      lf({
+        id: "k-neutral-overview",
+        label: "Neutral Ground Analysis",
+        detail: `Conversation with ${speakers.length > 0 ? speakers.join(" vs ") : "unidentified participants"} analyzed. ${conflictHits.length} conflict indicator(s) and ${passiveHits.length} passive aggression marker(s) detected.`,
+        severity: conflictHits.length > 3 ? "Medium" : "Info",
+        confidence: 0.55,
+        evidence: conflictHits.slice(0, 3).join(", ") || "No overt conflict keywords found.",
+      }),
+    );
+
+    if (speakers.length >= 2) {
+      const perSpeaker: Record<string, number> = {};
+      for (const s of speakers) {
+        const sLow = s.toLowerCase();
+        const lines = text.split("\n").filter((l) => l.toLowerCase().startsWith(sLow));
+        perSpeaker[s] = lines.length;
+      }
+      const [mostActive] = Object.entries(perSpeaker).sort((a, b) => b[1] - a[1]);
+      if (mostActive) {
+        findings.push(
+          lf({
+            id: "k-neutral-activity",
+            label: "Message Volume",
+            detail: `${mostActive[0]} sent the most messages (${mostActive[1]} lines). In a heated argument, the person who types more is usually not the one winning.`,
+            severity: "Info",
+            confidence: 0.5,
+          }),
+        );
+      }
+    }
+
+    findings.push(
+      lf({
+        id: "k-neutral-verdict",
+        label: "Verdict",
+        detail: conflictHits.length === 0
+          ? "This looks more like a mild disagreement than a full-blown kalesh. Both parties seem reasonably calm."
+          : conflictHits.length <= 3
+            ? "There's some heat here, but it hasn't fully escalated. A cooling-off period might help."
+            : "This is a proper kalesh. Both sides have said things they might regret. Nobody's winning this one.",
+        severity: "Info",
+        confidence: 0.5,
+      }),
+    );
+  } else if (mode === "gaslight") {
+    findings.push(
+      lf({
+        id: "k-gaslight-overview",
+        label: "Gaslight Detector",
+        detail: gaslightHits.length > 0
+          ? `Detected ${gaslightHits.length} potential gaslighting pattern(s): ${gaslightHits.slice(0, 3).join(", ")}. These phrases are commonly used to undermine someone's perception of reality.`
+          : "No common gaslighting phrases detected. This doesn't mean manipulation isn't present — subtle tactics don't always use textbook phrases.",
+        severity: gaslightHits.length > 0 ? "Medium" : "Info",
+        confidence: 0.5,
+        evidence: gaslightHits.slice(0, 3).join(", ") || "No gaslight patterns found.",
+      }),
+    );
+
+    if (gaslightHits.length > 0) {
+      findings.push(
+        lf({
+          id: "k-gaslight-education",
+          label: "What is gaslighting?",
+          detail: "Gaslighting is a pattern of manipulation where one person makes another question their own memory, perception, or sanity. Common phrases include 'that never happened', 'you're overreacting', and 'you remembered wrong'.",
+          severity: "Info",
+          confidence: 0.7,
+        }),
+      );
+    }
+  } else if (mode === "exit") {
+    const exitScript = speakers.length >= 2
+      ? `Hey ${speakers[1]}, I appreciate you sharing your perspective. I think we both need a little space to cool off. Let's revisit this when we're both feeling less heated. I value our relationship more than winning this argument. Talk soon.`
+      : `Hey, I think we're both getting a bit heated here. Let's take a step back and revisit this when we've had some time to think. I'd rather find a solution than keep going back and forth. Catch you later.`;
+
+    findings.push(
+      lf({
+        id: "k-exit-script",
+        label: "The Exit Script",
+        detail: "Here's your calm, dignified exit strategy. The goal is to de-escalate without admitting defeat or escalating further.",
+        severity: "Info",
+        confidence: 0.6,
+        copiableText: exitScript,
+      }),
+    );
+
+    copiableOutputs.push(exitScript);
+  }
+
+  const metrics: Record<string, string | number> = {
+    speakersDetected: speakers.length,
+    conflictIndicators: conflictHits.length,
+    gaslightPatterns: gaslightHits.length,
+    escalationMarkers: escalationHits.length,
+    passiveAggression: passiveHits.length,
+    wordCount: words,
+    analysisMode: mode,
+  };
+
+  const notes = [
+    "PII redaction should be applied before sharing screenshots externally.",
+    "This analysis is based on text patterns and does not constitute psychological assessment.",
+    "Results are humorous and should not be taken as professional relationship advice.",
+    "For serious concerns about manipulation or abuse, please contact a professional.",
+  ];
+
+  return {
+    summary: `Kalesh analyzed in "${mode === "neutral" ? "Neutral Ground" : mode === "gaslight" ? "Gaslight Detector" : "The Exit Script"}" mode. ${speakers.length} speaker(s), ${conflictHits.length} conflict indicators, ${gaslightHits.length} gaslight pattern(s) detected.`,
+    metrics,
+    findings,
+    notes,
+  };
+};
+
+/* =====================================================================
+   PASSIVE AGGRESSIVE GENERATOR
+   ===================================================================== */
+
+const PA_TEMPLATES: Record<string, { prefix: string; suffix: string; style: string }> = {
+  corporate: {
+    prefix: "Per my last communication,",
+    suffix: "Going forward, I would appreciate it if we could align on this matter at your earliest convenience. Please don't hesitate to reach out if you need further clarification.",
+    style: "Corporate",
+  },
+  roast: {
+    prefix: "Oh, you sweet summer child,",
+    suffix: "But hey, at least you're consistent. That's... something. Let me know when you're ready to actually address this.",
+    style: "Roast",
+  },
+  polite: {
+    prefix: "I hope this message finds you well!",
+    suffix: "Thank you so much for your understanding on this. I really appreciate your time and attention to this matter. Wishing you a wonderful day!",
+    style: "Polite",
+  },
+};
+
+const passiveAggressiveAnalyzer: Handler = (text, config) => {
+  const mode = (config.generationMode as string) ?? "corporate";
+  const template = PA_TEMPLATES[mode] ?? PA_TEMPLATES.corporate;
+
+  /* Analyze the input message for intensity */
+  const low = text.toLowerCase();
+  const intensityKeywords = ["always", "never", "stupid", "hate", "worst", "terrible", "annoying", "useless", "pathetic", "seriously"];
+  const intensityHits = intensityKeywords.filter((k) => low.includes(k));
+  const intensity = Math.min(5, 1 + intensityHits.length);
+
+  /* Detect the core complaint */
+  const complaintPatterns = [
+    /(?:stop|please stop|why do you)\s+(.+)/i,
+    /(?:you|y'all|everyone)\s+(?:always|never)\s+(.+)/i,
+    /(?:i (?:wish|need|want))\s+(?:you|y'all)\s+(?:would|to)\s+(.+)/i,
+    /(?:it(?:'s| is) (?:so |really |extremely ))?(?:annoying|frustrating|terrible|stupid|ridiculous)\s+(?:when|that)\s+(.+)/i,
+  ];
+
+  let coreComplaint = "the situation at hand";
+  for (const pattern of complaintPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      coreComplaint = match[0].trim();
+      break;
+    }
+  }
+
+  /* Generate output based on mode */
+  let generated: string;
+  if (mode === "corporate") {
+    generated = `${template.prefix}\n\nI wanted to gently circle back on ${coreComplaint}. While I understand that perspectives may differ on this matter, I believe a more aligned approach would benefit all stakeholders going forward.\n\nI would kindly request that we schedule a brief alignment session to ensure we are operating from the same page.\n\n${template.suffix}`;
+  } else if (mode === "roast") {
+    generated = `${template.prefix}\n\nSo about ${coreComplaint}... I just have to say — that's truly one of the decisions of all time. Really groundbreaking stuff there. I'm sure nobody saw this coming except literally everyone.\n\nBut please, do go on. I'm absolutely fascinated by this approach.\n\n${template.suffix}`;
+  } else {
+    generated = `${template.prefix}\n\nI just wanted to share a tiny little thought about ${coreComplaint}! No pressure at all, but if we could maybe, possibly, think about doing things differently, that would be absolutely amazing! 🙏\n\nI totally get it though — we're all doing our best and that's what matters most! 💕\n\n${template.suffix}`;
+  }
+
+  const findings: LabFinding[] = [
+    lf({
+      id: "pa-generated",
+      label: `Generated (${template.style} mode)`,
+      detail: `Your passive-aggressive message has been crafted with ${intensity}/5 intensity. The original message contained ${intensityHits.length} intensity keyword(s).`,
+      severity: "Info",
+      confidence: 0.6,
+      evidence: `Core complaint: ${coreComplaint}`,
+      copiableText: generated,
+    }),
+    lf({
+      id: "pa-analysis",
+      label: "Message Analysis",
+      detail: `Detected ${intensityHits.length} intensity keyword(s). ${intensity >= 3 ? "This is a high-frustration message — the passive-aggressive output matches that energy." : "This is a moderate complaint — the output keeps it breezy."}`,
+      severity: "Info",
+      confidence: 0.5,
+      evidence: intensityHits.slice(0, 3).join(", ") || "No high-intensity keywords detected.",
+    }),
+  ];
+
+  const metrics: Record<string, string | number> = {
+    mode,
+    intensity,
+    wordCount: countWords(text),
+    intensityKeywords: intensityHits.length,
+  };
+
+  const notes = [
+    "The perfect tool for when 'per my last email' just isn't enough.",
+    "Generated messages are for entertainment purposes. Use your own judgment before sending.",
+    "No real emails, texts, or messages are stored or transmitted.",
+  ];
+
+  return {
+    summary: `Generated a ${template.style.toLowerCase()}-style passive-aggressive message (${intensity}/5 intensity).`,
+    metrics,
+    findings,
+    notes,
+  };
+};
+
+/* =====================================================================
+   EXISTING HANDLERS (unchanged)
+   ===================================================================== */
 
 const sentimentToneAnalyzer: Handler = requireText((text, config) => {
   const low = text.toLowerCase();
@@ -380,7 +982,7 @@ const consentRecordAuditor: Handler = requireText((text) => {
   };
 });
 
-const metadataInspector: Handler = requireText((text) => {
+const metadataInspector: Handler = requireText(() => {
   return {
     summary: "Hidden metadata (e.g., edit history, authors) is not stored in extracted text.",
     metrics: { metadataExtracted: 0, formatsWithMetadata: 1 },
@@ -428,7 +1030,18 @@ function futureAiPlaceholder(label: string): Handler {
   });
 }
 
+/* =====================================================================
+   HANDLERS MAP
+   ===================================================================== */
+
 const HANDLERS: Record<string, Handler> = {
+  /* New: Labs-1 phase */
+  "dream-ai-analyzer": dreamAnalyzer,
+  "kalesh-analyzer": kaleshAnalyzer,
+  "passive-aggressive-generator": passiveAggressiveAnalyzer,
+  /* social-escape-assistant: Coming Soon — no handler needed */
+
+  /* Existing labs */
   "sentiment-tone-analyzer": sentimentToneAnalyzer,
   "contract-style-tuner": contractStyleTuner,
   "negotiation-coach": negotiationCoach,
@@ -472,6 +1085,32 @@ export async function runLab(payload: LabRunPayload): Promise<LabOutput> {
     };
   }
 
+  /* Coming Soon labs should not be processed */
+  if (def.comingSoon) {
+    return {
+      labSlug: payload.labSlug,
+      labName: def.name,
+      version: "v0",
+      status: "COMING_SOON",
+      isolated: true,
+      generatedAt: new Date().toISOString(),
+      inputType: "none",
+      summary: `${def.name} is coming soon. Join the waitlist to be notified when it launches.`,
+      metrics: { implemented: 0 },
+      findings: [
+        lf({
+          id: "coming-soon",
+          label: "Coming Soon",
+          detail: "This lab is under development and not yet available for use.",
+          severity: "Info",
+          confidence: 1,
+        }),
+      ],
+      notes: ["This lab will be available in a future phase."],
+      disclaimer: "Lab outputs are isolated experimental results and do not affect production audit results.",
+    };
+  }
+
   const handler = HANDLERS[payload.labSlug];
   const extraction = await extractForAudit({
     toolSlug: "custom-ai-audit",
@@ -482,7 +1121,14 @@ export async function runLab(payload: LabRunPayload): Promise<LabOutput> {
   });
   const text = extraction.text;
 
-  let result: { summary: string; metrics: Record<string, string | number>; findings: LabFinding[]; notes: string[] };
+  let result: {
+    summary: string;
+    metrics: Record<string, string | number>;
+    findings: LabFinding[];
+    notes: string[];
+    similarDreams?: import("@/lib/engine/types").SimilarDreamInfo;
+    followUp?: DreamFollowUp;
+  };
   if (!handler) {
     result = {
       summary: `${def.name} is registered but has no lab logic in this phase.`,
@@ -494,7 +1140,7 @@ export async function runLab(payload: LabRunPayload): Promise<LabOutput> {
     result = handler(text, (payload.config ?? {}) as Record<string, string | number | boolean>);
   }
 
-  return {
+  const output: LabOutput = {
     labSlug: payload.labSlug,
     labName: def.name,
     version: "v0.1",
@@ -509,4 +1155,14 @@ export async function runLab(payload: LabRunPayload): Promise<LabOutput> {
     disclaimer:
       "Lab outputs are isolated experimental results and do not affect production audit results. Lab status indicates maturity, not availability guarantees.",
   };
+
+  /* Pass through dream-specific fields if present */
+  if (result.similarDreams) {
+    output.similarDreams = result.similarDreams;
+  }
+  if (result.followUp) {
+    output.followUp = result.followUp;
+  }
+
+  return output;
 }

@@ -32,8 +32,9 @@ export default function StoryVerseDiscussionPage() {
 
       <div className="mb-6">
         <BlueprintNote>
-          Discussion threads are blueprint placeholders. Real-time messaging
-          and notifications land in a future phase.
+          Discussion threads are blueprint placeholders. StoryVerse business
+          logic includes contributor agreements, AI Editor, and copyright
+          similarity detection. Real-time messaging lands in a future phase.
         </BlueprintNote>
       </div>
 

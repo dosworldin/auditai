@@ -88,7 +88,7 @@ export default function StoryVerseLibraryPage() {
       )}
 
       <div className="mt-6">
-        <Badge tone="neutral">Library persistence is implemented in a future phase</Badge>
+        <Badge tone="neutral">Co-authors receive automatic free access to works they contributed to</Badge>
       </div>
     </Container>
   );

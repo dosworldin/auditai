@@ -6,15 +6,19 @@ import {
   Fingerprint,
   Gauge,
   Globe2,
+  Hand,
   History,
   LayoutGrid,
   ListChecks,
   Map,
+  MessageCircleWarning,
   MessageSquareQuote,
+  Moon,
   Network,
   Quote,
   Rocket,
   ScanSearch,
+  Send,
   Shield,
   ShieldCheck,
   Sparkles,
@@ -113,6 +117,65 @@ const cfgLanguage: ConfigField = {
   default: "en",
 };
 
+/* --- Dream-specific config --- */
+const cfgDreamRecall: ConfigField = {
+  key: "recallLevel",
+  label: "Recall detail level",
+  type: "select",
+  options: [
+    { label: "Vague fragments", value: "vague" },
+    { label: "Moderate detail", value: "moderate" },
+    { label: "Vivid and detailed", value: "vivid" },
+  ],
+  default: "moderate",
+  help: "How well you remember the dream affects the depth of analysis.",
+};
+
+const cfgDreamCountry: ConfigField = {
+  key: "country",
+  label: "Your country (optional)",
+  type: "select",
+  options: [
+    { label: "Prefer not to say", value: "" },
+    { label: "India", value: "India" },
+    { label: "United States", value: "United States" },
+    { label: "Canada", value: "Canada" },
+    { label: "United Kingdom", value: "United Kingdom" },
+    { label: "Australia", value: "Australia" },
+    { label: "Other", value: "Other" },
+  ],
+  default: "",
+  help: "Used only for aggregated Similar Dreams statistics. Never shared as personal data.",
+};
+
+/* --- Kalesh-specific config --- */
+const cfgKaleshMode: ConfigField = {
+  key: "analysisMode",
+  label: "Analysis mode",
+  type: "select",
+  options: [
+    { label: "Neutral Ground", value: "neutral" },
+    { label: "Gaslight Detector", value: "gaslight" },
+    { label: "The Exit Script", value: "exit" },
+  ],
+  default: "neutral",
+  help: "Choose how the conversation should be analyzed.",
+};
+
+/* --- Passive Aggressive-specific config --- */
+const cfgPAMode: ConfigField = {
+  key: "generationMode",
+  label: "Tone",
+  type: "select",
+  options: [
+    { label: "Corporate", value: "corporate" },
+    { label: "Roast", value: "roast" },
+    { label: "Polite", value: "polite" },
+  ],
+  default: "corporate",
+  help: "Choose the tone for your rewritten message.",
+};
+
 function lab(
   slug: string,
   name: string,
@@ -123,11 +186,79 @@ function lab(
   icon: LabDefinition["icon"],
   accent: string,
   config: ConfigField[] = [cfgDepth, cfgOutput],
+  extra?: { tables?: string[]; comingSoon?: boolean },
 ): LabDefinition {
-  return { slug, name, description, category, status, inputs, icon, accent, config };
+  return { slug, name, description, category, status, inputs, icon, accent, config, ...extra };
 }
 
 export const LAB_REGISTRY: LabDefinition[] = [
+  /* === NEW: Dream AI Analyzer === */
+  lab(
+    "dream-ai-analyzer",
+    "Dream AI Analyzer",
+    "Decode the symbols and emotional logic of your subconscious mind.",
+    "Experimental AI",
+    "Experimental",
+    ["text"],
+    Moon,
+    "violet",
+    [cfgDreamRecall, cfgDreamCountry, cfgLanguage],
+    {
+      tables: ["labs_dream_entries", "labs_dream_symbols", "labs_dream_analysis"],
+    },
+  ),
+
+  /* === NEW: Kalesh Analyzer === */
+  lab(
+    "kalesh-analyzer",
+    "Kalesh Analyzer",
+    "Upload screenshots of arguments and get a humorous, neutral breakdown of who's right (spoiler: nobody).",
+    "Document Intelligence",
+    "Beta",
+    ["image"],
+    MessageCircleWarning,
+    "rose",
+    [cfgKaleshMode, cfgLanguage],
+    {
+      tables: ["labs_kalesh_sessions", "labs_kalesh_outputs"],
+    },
+  ),
+
+  /* === NEW: Social Escape Assistant === */
+  lab(
+    "social-escape-assistant",
+    "Social Escape Assistant",
+    "Generate a believable exit script for awkward social situations. Location-aware, context-sensitive, zero guilt.",
+    "Experimental AI",
+    "Coming Soon",
+    ["text"],
+    Hand,
+    "amber",
+    [cfgLanguage],
+    {
+      tables: ["labs_social_escape_requests", "labs_social_escape_outputs"],
+      comingSoon: true,
+    },
+  ),
+
+  /* === NEW: Passive Aggressive Generator === */
+  lab(
+    "passive-aggressive-generator",
+    "Passive Aggressive Generator",
+    'The perfect tool for when "per my last email" just isn\'t enough.',
+    "Experimental AI",
+    "Ready",
+    ["text"],
+    Send,
+    "indigo",
+    [cfgPAMode, cfgLanguage],
+    {
+      tables: ["labs_passive_aggressive_requests", "labs_passive_aggressive_outputs"],
+    },
+  ),
+
+  /* Existing labs below */
+
   /* Experimental AI */
   lab(
     "sentiment-tone-analyzer",

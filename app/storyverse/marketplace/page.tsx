@@ -50,8 +50,9 @@ export default function StoryVerseMarketplacePage() {
 
       <div className="mb-6">
         <BlueprintNote>
-          Blueprint: listings, purchases and licensing are simulated. Commerce
-          and payouts arrive in a future phase.
+          StoryVerse marketplace engine is live: book sales follow 30/70 split (Platform/Authors).
+          Published works have immutable publication snapshots with frozen author shares.
+          Co-authors receive free access to works they contributed to.
         </BlueprintNote>
       </div>
 

@@ -1,77 +1,28 @@
 import type { StorySnippet, StoryWork } from "@/lib/types";
+import { getAllStories } from "@/lib/storyverse/engine";
 
-export const STORY_WORKS: StoryWork[] = [
-  {
-    id: "the-lighthouse-keeper",
-    title: "The Lighthouse Keeper",
-    synopsis:
-      "A reclusive lighthouse keeper discovers a journal that predicts every storm before it arrives.",
-    genre: "Mystery",
-    author: "Maya R.",
-    contributors: 42,
-    rounds: 7,
-    status: "In Progress",
-    coverColor: "indigo",
-    chapters: 4,
-    progress: 58,
-  },
-  {
-    id: "city-of-broken-clocks",
-    title: "City of Broken Clocks",
-    synopsis:
-      "In a city where time stopped at midnight, one young courier races to restart it.",
-    genre: "Sci-Fi",
-    author: "Dev K.",
-    contributors: 87,
-    rounds: 12,
-    status: "In Review",
-    coverColor: "teal",
-    chapters: 9,
-    progress: 100,
-  },
-  {
-    id: "the-orchard-of-echoes",
-    title: "The Orchard of Echoes",
-    synopsis:
-      "Three sisters inherit an orchard where every fruit tastes like a memory.",
-    genre: "Fantasy",
-    author: "Anaya S.",
-    contributors: 23,
-    rounds: 5,
-    status: "Draft",
-    coverColor: "amber",
-    chapters: 2,
-    progress: 15,
-  },
-  {
-    id: "midnight-at-cafe-luna",
-    title: "Midnight at Cafe Luna",
-    synopsis:
-      "Regulars at a late-night cafe realize their orders always predict their futures.",
-    genre: "Slice of Life",
-    author: "Rohan T.",
-    contributors: 58,
-    rounds: 9,
-    status: "Published",
-    coverColor: "rose",
-    chapters: 12,
-    progress: 100,
-  },
-  {
-    id: "the-cartographer-s-daughter",
-    title: "The Cartographer's Daughter",
-    synopsis:
-      "A young mapmaker finds a coastline that appears on no official chart.",
-    genre: "Adventure",
-    author: "Ishaan P.",
-    contributors: 31,
-    rounds: 6,
-    status: "In Progress",
-    coverColor: "violet",
-    chapters: 5,
-    progress: 42,
-  },
-];
+/** Generate StoryWork[] from the engine store for backward-compatible UI. */
+export function getStoryWorks(): StoryWork[] {
+  return getAllStories().map((s) => ({
+    id: s.id,
+    title: s.title,
+    synopsis: s.description,
+    genre: s.genre,
+    author: s.contributors.find((c) => c.role === "owner")?.displayName ?? "Unknown",
+    contributors: s.contributors.length,
+    rounds: s.currentRound,
+    status: s.status === "PUBLISHED" || s.status === "MARKETPLACE" ? "Published"
+      : s.status === "PUBLICATION_REVIEW" || s.status === "REVISION_REVIEW" ? "In Review"
+      : s.status === "DRAFT" ? "Draft"
+      : "In Progress",
+    coverColor: s.coverColor,
+    chapters: s.chapters.length,
+    progress: s.totalRounds > 0 ? Math.round((s.currentRound / s.totalRounds) * 100) : 0,
+  }));
+}
+
+/** Backward-compatible constant (calls getStoryWorks under the hood). */
+export const STORY_WORKS: StoryWork[] = getStoryWorks();
 
 export const SNIPPETS: StorySnippet[] = [
   {

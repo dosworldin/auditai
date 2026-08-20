@@ -98,7 +98,7 @@ export interface ToolDefinition {
   accent: string;
 }
 
-export type LabStatus = "Experimental" | "Beta";
+export type LabStatus = "Experimental" | "Beta" | "Ready" | "Coming Soon";
 
 export type LabCategory =
   | "Experimental AI"
@@ -119,6 +119,10 @@ export interface LabDefinition {
   config: ConfigField[];
   icon: LucideIcon;
   accent: string;
+  /** Optional: reference to database tables this lab uses (documented, not enforced). */
+  tables?: string[];
+  /** When true, the lab is not yet active and shows a Coming Soon state. */
+  comingSoon?: boolean;
 }
 
 export type NavSection =

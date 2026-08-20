@@ -51,9 +51,11 @@ export default function StoryVersePage() {
 
       <div className="mb-6">
         <BlueprintNote>
-          StoryVerse is a frontend/product blueprint. Contribution logic, AI
-          continuity checks, voting, canonization, publication review, revenue
-          shares and payouts are intentionally not implemented in this phase.
+          StoryVerse business logic v2 is live: contribution flow, AI Editor
+          (continuity + copyright checks), voting, canonization, publication
+          review, revenue splits, contributor agreements, and pool inactivity
+          management are implemented. Payments, auth, and DB persistence
+          remain for future phases.
         </BlueprintNote>
       </div>
 

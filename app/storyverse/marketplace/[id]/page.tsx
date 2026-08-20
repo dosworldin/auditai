@@ -34,8 +34,9 @@ export default function StoryVerseMarketplaceDetailPage() {
 
       <div className="mb-6">
         <BlueprintNote>
-          Purchase and licensing are simulated. Marketplace commerce is
-          implemented in a future phase.
+          Purchase flow uses the engine's 30/70 revenue split (Platform/Authors).
+          Author shares are frozen at publication time via immutable snapshots.
+          Real payment processing remains for future phases.
         </BlueprintNote>
       </div>
 

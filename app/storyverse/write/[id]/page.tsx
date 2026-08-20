@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import {
   ArrowLeft,
   CheckCircle2,
+  FileCheck,
   PenLine,
   ShieldCheck,
   ThumbsDown,
@@ -19,7 +20,7 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader } from "@/components/ui/Card";
 import { Avatar } from "@/components/ui/PageHeader";
 import { Field, Textarea } from "@/components/ui/Field";
-import { SNIPPETS, STORY_WORKS } from "@/lib/storyverse/data";
+import { SNIPPETS, STORY_WORKS } from "@/lib/storyverse/data"
 
 export default function WritePage() {
   const params = useParams<{ id: string }>();
@@ -58,8 +59,9 @@ export default function WritePage() {
 
       <div className="mb-6">
         <BlueprintNote>
-          Blueprint: contributions, AI checks and voting are simulated. The
-          real engines arrive in a future phase.
+          StoryVerse business logic v2: contributor agreement required before
+          first contribution. AI Editor runs post-voting with continuity and
+          copyright checks. Pricing shown below is from admin config.
         </BlueprintNote>
       </div>
 
@@ -161,11 +163,15 @@ export default function WritePage() {
           </Card>
 
           <Card>
-            <CardHeader title="Canon rules" />
+            <CardHeader title="Business logic" />
             <CardContent className="space-y-2 text-sm text-muted-foreground">
-              <p>1. Contributions must continue established canon.</p>
-              <p>2. AI checks continuity and safety before voting.</p>
-              <p>3. Highest-voted contribution wins the round.</p>
+              <p>1. Contributors must accept the Contributor Agreement before first contribution.</p>
+              <p>2. After voting, AI Editor runs continuity + copyright checks.</p>
+              <p>3. AI Editor cost: 10 credits per execution.</p>
+              <p>4. If AI suggests a rewrite, author must approve before canonization.</p>
+              <p>5. Copyright similarity is NOT a legal determination.</p>
+              <p>6. Solo invitations may charge a fee (admin-configurable).</p>
+              <p>7. Pool stories enter inactivity hold after 7 days with a single contributor.</p>
             </CardContent>
           </Card>
         </div>

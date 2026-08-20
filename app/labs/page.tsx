@@ -1,11 +1,18 @@
 import Link from "next/link";
 import { ArrowRight, FlaskConical } from "lucide-react";
-import { Container, BlueprintNote } from "@/components/layout/Container";
+import { Container } from "@/components/layout/Container";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { ToolIcon } from "@/components/ui/ToolIcon";
 import { labCategories, getLabsByCategory, LAB_COUNT } from "@/lib/labs/registry";
+
+const statusBadge: Record<string, "info" | "warning" | "success" | "neutral"> = {
+  Experimental: "warning",
+  Beta: "info",
+  Ready: "success",
+  "Coming Soon": "neutral",
+};
 
 export default function LabsPage() {
   const grouped = getLabsByCategory();
@@ -14,17 +21,9 @@ export default function LabsPage() {
     <Container className="py-8">
       <PageHeader
         title="Labs"
-        description="An experimental playground for next-generation AI capabilities. Experiments are either Beta (usable with caution) or Experimental (rough edges expected)."
+        description="An experimental playground for next-generation AI capabilities. Labs range from Experimental (rough edges) to Ready (fully functional)."
         icon={<FlaskConical className="h-5 w-5" />}
       />
-
-      <div className="mb-6">
-        <BlueprintNote>
-          Labs are blueprint modules: their pages, statuses and configuration
-          schemas are defined, but the underlying experimental processing is
-          intentionally deferred to future phases.
-        </BlueprintNote>
-      </div>
 
       <div className="space-y-10">
         {labCategories.map((category) => {
@@ -52,7 +51,7 @@ export default function LabsPage() {
                       <div className="flex h-full flex-col p-5">
                         <div className="flex items-start justify-between gap-2">
                           <ToolIcon icon={lab.icon} accentKey={lab.accent} />
-                          <Badge tone={lab.status === "Beta" ? "info" : "warning"}>
+                          <Badge tone={statusBadge[lab.status] ?? "neutral"}>
                             {lab.status}
                           </Badge>
                         </div>
@@ -67,7 +66,8 @@ export default function LabsPage() {
                             {lab.inputs.map((i) => i.toUpperCase()).join(", ")}
                           </span>
                           <span className="inline-flex items-center gap-1 text-sm font-medium text-primary">
-                            Open <ArrowRight className="h-3.5 w-3.5" />
+                            {lab.comingSoon ? "Coming Soon" : "Open"}{" "}
+                            {!lab.comingSoon && <ArrowRight className="h-3.5 w-3.5" />}
                           </span>
                         </div>
                       </div>

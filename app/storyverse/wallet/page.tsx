@@ -29,8 +29,9 @@ export default function StoryVerseWalletPage() {
 
       <div className="mb-6">
         <BlueprintNote>
-          Wallet figures are illustrative. Payments, payouts and revenue
-          sharing are intentionally not implemented in this phase.
+          Wallet data shown is from the in-memory StoryVerse engine store.
+          Revenue splits: Book sales 30/70 (Platform/Authors), Paid Voting 70/30 (Platform/Authors).
+          Payments and real payout processing remain for future phases.
         </BlueprintNote>
       </div>
 
