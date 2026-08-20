@@ -3,7 +3,7 @@
  * Since we don't have auto-generated types, these helpers cast results properly.
  */
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable */
 
 /** Cast a Supabase query result to avoid generic type issues */
 export function asQuery<T>(query: any): { data: T[] | null; error: any } {

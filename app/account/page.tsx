@@ -12,7 +12,7 @@ import { RequireAuth } from "@/components/auth/RequireAuth";
 import { useAuth } from "@/lib/auth/context";
 
 export default function AccountPage() {
-  const { user, profile, refreshProfile } = useAuth();
+  const { user, profile, refreshProfile, signOut } = useAuth();
   const [name, setName] = useState("");
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -49,7 +49,7 @@ export default function AccountPage() {
           description="Manage your profile and preferences."
           icon={<User className="h-5 w-5" />}
           actions={
-            <Button variant="ghost" onClick={() => useAuth().signOut()}>
+            <Button variant="ghost" onClick={() => signOut()}>
               Sign out
             </Button>
           }
