@@ -1,130 +1,81 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { ArrowRight, ShoppingBag, Store } from "lucide-react";
-import { Container, BlueprintNote } from "@/components/layout/Container";
+import { ArrowRight, Loader2, Store } from "lucide-react";
+import { Container } from "@/components/layout/Container";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Card } from "@/components/ui/Card";
+import { Card, CardContent } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
-import { STORY_WORKS } from "@/lib/storyverse/data";
-import { accent } from "@/components/ui/Accent";
-import { cn } from "@/lib/utils";
+import { getSupabaseBrowser } from "@/lib/db/supabase-browser";
 
-const marketEntries = [
-  {
-    work: STORY_WORKS[3],
-    price: "$4.99",
-    purchases: 1240,
-    rating: "4.8",
-  },
-  {
-    work: STORY_WORKS[1],
-    price: "$3.49",
-    purchases: 862,
-    rating: "4.6",
-  },
-  {
-    work: STORY_WORKS[0],
-    price: "$2.99",
-    purchases: 0,
-    rating: "New",
-  },
-];
+interface Story {
+  id: string;
+  title: string;
+  description: string;
+  genre: string;
+  cover_color: string;
+  status: string;
+}
 
-export default function StoryVerseMarketplacePage() {
-  const [filter, setFilter] = useState("All");
+export default function MarketplacePage() {
+  const [stories, setStories] = useState<Story[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const supabase = getSupabaseBrowser();
+        const { data } = await supabase
+          .from("storyverse_stories")
+          .select("id, title, description, genre, cover_color, status")
+          .eq("status", "MARKETPLACE")
+          .order("updated_at", { ascending: false });
+        setStories((data as unknown as Story[]) ?? []);
+      } catch { /* empty */ }
+      finally { setLoading(false); }
+    }
+    load();
+  }, []);
 
   return (
     <Container className="py-8">
       <PageHeader
-        title="StoryVerse Marketplace"
-        description="Published works from the community, available to readers and licensed through the platform."
+        title="Marketplace"
+        description="Browse and purchase published StoryVerse stories."
         icon={<Store className="h-5 w-5" />}
-        breadcrumbs={[
-          { label: "StoryVerse", href: "/storyverse" },
-          { label: "Marketplace" },
-        ]}
       />
 
-      <div className="mb-6">
-        <BlueprintNote>
-          Blueprint: listings, purchases and licensing are simulated. Commerce
-          and payouts arrive in a future phase.
-        </BlueprintNote>
-      </div>
-
-      <div className="mb-6 flex flex-wrap gap-2">
-        {["All", "Free", "Paid", "Featured"].map((label) => (
-          <button
-            key={label}
-            type="button"
-            onClick={() => setFilter(label)}
-            className={cn(
-              "rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors",
-              filter === label
-                ? "border-primary bg-accent text-accent-foreground"
-                : "border-border bg-card text-muted-foreground hover:bg-secondary",
-            )}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {marketEntries.map((entry) => {
-          const a = accent(entry.work.coverColor);
-          return (
-            <Link key={entry.work.id} href={`/storyverse/marketplace/${entry.work.id}`}>
-              <Card interactive className="h-full">
-                <div className="flex h-full flex-col">
-                  <div className={cn("flex h-28 items-end rounded-t-xl bg-gradient-to-br p-4", a.solid)}>
-                    <div className="text-white">
-                      <p className="text-xs uppercase tracking-wider opacity-80">
-                        {entry.work.genre}
-                      </p>
-                      <h3 className="text-lg font-bold">{entry.work.title}</h3>
-                    </div>
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      ) : stories.length > 0 ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {stories.map((story) => (
+            <Link key={story.id} href={`/storyverse/marketplace/${story.id}`}>
+              <Card interactive>
+                <CardContent className="space-y-2">
+                  <div className={`h-32 rounded-lg bg-${story.cover_color}-500/10 flex items-center justify-center`}>
+                    <span className="text-4xl">📖</span>
                   </div>
-                  <div className="flex flex-1 flex-col p-4">
-                    <p className="flex-1 text-sm text-muted-foreground">
-                      {entry.work.synopsis}
-                    </p>
-                    <div className="mt-3 flex items-center justify-between text-sm">
-                      <span className="font-semibold text-foreground">
-                        {entry.price}
-                      </span>
-                      <Badge tone="neutral">
-                        {entry.rating} - {entry.purchases} readers
-                      </Badge>
-                    </div>
-                    <div className="mt-3 flex items-center justify-between">
-                      <Badge tone="success">Published</Badge>
-                      <span className="inline-flex items-center gap-1 text-sm font-medium text-primary">
-                        View <ArrowRight className="h-3.5 w-3.5" />
-                      </span>
-                    </div>
+                  <Badge tone="info">{story.genre}</Badge>
+                  <h3 className="font-semibold text-foreground">{story.title}</h3>
+                  <p className="text-sm text-muted-foreground line-clamp-2">{story.description}</p>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-primary">Read more</span>
+                    <ArrowRight className="h-4 w-4 text-muted-foreground" />
                   </div>
-                </div>
+                </CardContent>
               </Card>
             </Link>
-          );
-        })}
-      </div>
-
-      <div className="mt-8 flex flex-col items-center gap-3 rounded-xl border border-border bg-card p-6 text-center">
-        <ShoppingBag className="h-8 w-8 text-muted-foreground" />
-        <h3 className="font-semibold text-foreground">Want your story here?</h3>
-        <p className="max-w-md text-sm text-muted-foreground">
-          Complete your story, pass publication review, and the community
-          votes to publish it in the Marketplace.
-        </p>
-        <Link href="/storyverse/create">
-          <Button variant="outline">Create a story</Button>
-        </Link>
-      </div>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-xl border border-dashed border-border bg-card p-8 text-center">
+          <p className="text-muted-foreground">No stories are listed in the marketplace yet.</p>
+        </div>
+      )}
     </Container>
   );
 }

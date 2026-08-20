@@ -1,18 +1,23 @@
+"use client";
+
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
   BookOpenText,
   LibraryBig,
+  Loader2,
   MessageSquareText,
   PenLine,
   Store,
   Wallet,
 } from "lucide-react";
-import { Container, BlueprintNote } from "@/components/layout/Container";
+import { Container } from "@/components/layout/Container";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { WorkCard } from "@/components/storyverse/WorkCard";
-import { STORY_WORKS } from "@/lib/storyverse/data";
+import { useAuth } from "@/lib/auth/context";
+import { getSupabaseBrowser } from "@/lib/db/supabase-browser";
 
 const storyVerseLinks = [
   { label: "Create a story", href: "/storyverse/create", icon: PenLine, accent: "indigo" as const },
@@ -30,7 +35,55 @@ const flow = [
   { step: "Publish", text: "Completed stories enter review, then the Marketplace." },
 ];
 
+import type { StoryWork } from "@/lib/types";
+
 export default function StoryVersePage() {
+  const { user } = useAuth();
+  const [stories, setStories] = useState<StoryWork[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadStories() {
+      try {
+        const supabase = getSupabaseBrowser();
+        const { data } = await supabase
+          .from("storyverse_stories")
+          .select("id, title, description, genre, status, cover_color, story_type, owner_id, current_round, total_rounds")
+          .in("status", ["ACTIVE", "ROUND_VOTING", "PUBLICATION_REVIEW", "MARKETPLACE", "PUBLISHED"])
+          .order("updated_at", { ascending: false })
+          .limit(9);
+
+        if (data) {
+          const works: StoryWork[] = (data as unknown as Array<{
+            id: string; title: string; description: string; genre: string;
+            status: string; cover_color: string; owner_id: string;
+            current_round: number; total_rounds: number;
+          }>).map((s) => ({
+            id: s.id,
+            title: s.title,
+            synopsis: s.description,
+            genre: s.genre,
+            author: "",
+            contributors: 0,
+            rounds: s.current_round,
+            status: s.status === "PUBLISHED" || s.status === "MARKETPLACE" ? "Published"
+              : s.status === "PUBLICATION_REVIEW" ? "In Review"
+              : "In Progress",
+            coverColor: s.cover_color,
+            chapters: 0,
+            progress: s.total_rounds > 0 ? Math.round((s.current_round / s.total_rounds) * 100) : 0,
+          }));
+          setStories(works);
+        }
+      } catch {
+        // Fallback: use empty list
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadStories();
+  }, []);
+
   return (
     <Container className="py-8">
       <PageHeader
@@ -42,20 +95,14 @@ export default function StoryVersePage() {
             <Link href="/storyverse/library">
               <Badge tone="info">Library</Badge>
             </Link>
-            <Link href="/storyverse/create">
-              <Badge tone="primary">New story</Badge>
-            </Link>
+            {user && (
+              <Link href="/storyverse/create">
+                <Badge tone="primary">New story</Badge>
+              </Link>
+            )}
           </>
         }
       />
-
-      <div className="mb-6">
-        <BlueprintNote>
-          StoryVerse is a frontend/product blueprint. Contribution logic, AI
-          continuity checks, voting, canonization, publication review, revenue
-          shares and payouts are intentionally not implemented in this phase.
-        </BlueprintNote>
-      </div>
 
       <section className="mb-10 grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
@@ -121,11 +168,27 @@ export default function StoryVersePage() {
         </Link>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {STORY_WORKS.map((work) => (
-          <WorkCard key={work.id} work={work} />
-        ))}
-      </div>
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <span className="ml-2 text-muted-foreground">Loading stories...</span>
+        </div>
+      ) : stories.length > 0 ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {stories.map((work) => (
+            <WorkCard key={work.id} work={work} />
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-xl border border-dashed border-border bg-card p-8 text-center">
+          <p className="text-sm text-muted-foreground">No stories yet. Be the first to create one!</p>
+          {user && (
+            <Link href="/storyverse/create" className="mt-3 inline-block">
+              <Badge tone="primary">Create a story</Badge>
+            </Link>
+          )}
+        </div>
+      )}
     </Container>
   );
 }

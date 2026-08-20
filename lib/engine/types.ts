@@ -110,7 +110,9 @@ export type LabStatus =
   | "BETA"
   | "ACTIVE"
   | "DISABLED"
-  | "ARCHIVED";
+  | "ARCHIVED"
+  | "READY"
+  | "COMING_SOON";
 
 export interface LabFinding {
   id: string;
@@ -119,6 +121,29 @@ export interface LabFinding {
   evidence?: string;
   severity: Severity;
   confidence: number;
+  /** Optional: text that can be copied to clipboard (e.g. generated message). */
+  copiableText?: string;
+}
+
+export interface SimilarDreamInfo {
+  /** Whether this is a real database match or an example/sample. */
+  isReal: boolean;
+  /** Total number of matching dreams. */
+  totalCount: number;
+  /** Aggregated location breakdown (country-level only). */
+  locations: { country: string; count: number }[];
+  /** True when matches > 5; individual breakdown is suppressed. */
+  aggregateOnly: boolean;
+  /** Short description of the example when isReal=false. */
+  exampleDescription?: string;
+}
+
+export interface DreamFollowUp {
+  question: string;
+  /** Existing collected fields that are already filled. */
+  collected: Record<string, string>;
+  /** Which fields are still missing. */
+  missingFields: string[];
 }
 
 export interface LabOutput {
@@ -134,6 +159,10 @@ export interface LabOutput {
   findings: LabFinding[];
   notes: string[];
   disclaimer: string;
+  /** Dream-specific: similar dreams matching info. */
+  similarDreams?: SimilarDreamInfo;
+  /** Dream-specific: follow-up questions when detail is insufficient. */
+  followUp?: DreamFollowUp;
 }
 
 export interface LabRunPayload {

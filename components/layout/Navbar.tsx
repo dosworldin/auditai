@@ -3,15 +3,17 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu, ShieldCheck, X } from "lucide-react";
+import { LogOut, Menu, ShieldCheck, X } from "lucide-react";
 import { mainNavLinks, navSections } from "@/lib/navigation";
 import { ThemeToggle } from "@/lib/theme/theme-engine";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
+import { useAuth } from "@/lib/auth/context";
 
 export function Navbar() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const { user, profile, signOut } = useAuth();
 
   const isActive = (href: string) => {
     if (href === "/dashboard") return pathname === href;
@@ -50,14 +52,37 @@ export function Navbar() {
 
         <div className="flex items-center gap-2">
           <ThemeToggle />
-          <Link href="/account" className="hidden sm:block">
-            <Button variant="outline" size="sm">
-              Account
-            </Button>
-          </Link>
-          <Link href="/dashboard">
-            <Button size="sm">Dashboard</Button>
-          </Link>
+          {user ? (
+            <>
+              <Link href="/dashboard" className="hidden sm:block">
+                <Button variant="outline" size="sm">
+                  Dashboard
+                </Button>
+              </Link>
+              {profile?.role === "admin" && (
+                <Link href="/admin" className="hidden sm:block">
+                  <Button variant="outline" size="sm">
+                    Admin
+                  </Button>
+                </Link>
+              )}
+              <span className="hidden text-xs text-muted-foreground sm:block">
+                {profile?.display_name || user.email}
+              </span>
+              <Button variant="ghost" size="sm" onClick={() => signOut()}>
+                <LogOut className="h-4 w-4" />
+              </Button>
+            </>
+          ) : (
+            <>
+              <Link href="/auth">
+                <Button variant="outline" size="sm">Sign in</Button>
+              </Link>
+              <Link href="/auth?mode=signup">
+                <Button size="sm">Get started</Button>
+              </Link>
+            </>
+          )}
           <button
             type="button"
             className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground lg:hidden"

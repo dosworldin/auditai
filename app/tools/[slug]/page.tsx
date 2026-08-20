@@ -3,12 +3,13 @@
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { Container, BlueprintNote } from "@/components/layout/Container";
+import { Container } from "@/components/layout/Container";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ToolIcon } from "@/components/ui/ToolIcon";
 import { NotFoundState } from "@/components/ui/Feedback";
 import { Button } from "@/components/ui/Button";
 import { ToolClient } from "@/components/tools/ToolClient";
+import { RequireAuth } from "@/components/auth/RequireAuth";
 import { getTool } from "@/lib/tools/registry";
 
 export default function ToolPage() {
@@ -32,34 +33,28 @@ export default function ToolPage() {
   }
 
   return (
-    <Container className="py-8">
-      <PageHeader
-        title={tool.name}
-        description={tool.tagline}
-        icon={<ToolIcon icon={tool.icon} accentKey={tool.accent} size="md" />}
-        breadcrumbs={[
-          { label: "Audit Tools", href: "/tools" },
-          { label: tool.category, href: "/tools" },
-          { label: tool.name },
-        ]}
-        actions={
-          <Link href="/tools">
-            <Button variant="outline" size="sm">
-              <ArrowLeft className="h-4 w-4" /> All tools
-            </Button>
-          </Link>
-        }
-      />
+    <RequireAuth>
+      <Container className="py-8">
+        <PageHeader
+          title={tool.name}
+          description={tool.tagline}
+          icon={<ToolIcon icon={tool.icon} accentKey={tool.accent} size="md" />}
+          breadcrumbs={[
+            { label: "Audit Tools", href: "/tools" },
+            { label: tool.category, href: "/tools" },
+            { label: tool.name },
+          ]}
+          actions={
+            <Link href="/tools">
+              <Button variant="outline" size="sm">
+                <ArrowLeft className="h-4 w-4" /> All tools
+              </Button>
+            </Link>
+          }
+        />
 
-      <div className="mb-6">
-        <BlueprintNote>
-          Blueprint mode: this tool's interface, configuration schema and report
-          structure are production-ready, but the underlying analysis engine,
-          AI prompts and scoring are intentionally deferred to a future phase.
-        </BlueprintNote>
-      </div>
-
-      <ToolClient tool={tool} />
-    </Container>
+        <ToolClient tool={tool} />
+      </Container>
+    </RequireAuth>
   );
 }

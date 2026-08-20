@@ -1,16 +1,60 @@
 "use client";
 
-import { FlaskConical, Info, ShieldCheck } from "lucide-react";
+import { useState } from "react";
+import { Check, Copy, FlaskConical, Info, MessageCircleQuestion, ShieldCheck } from "lucide-react";
 import type { LabOutput } from "@/lib/engine/types";
 import { Badge } from "@/components/ui/Badge";
+import { SimilarDreams } from "@/components/labs/SimilarDreams";
 
 const statusTone: Record<string, "info" | "warning" | "success" | "neutral"> = {
   EXPERIMENTAL: "warning",
   BETA: "info",
   ACTIVE: "success",
+  READY: "success",
   DISABLED: "neutral",
   ARCHIVED: "neutral",
+  COMING_SOON: "neutral",
 };
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* fallback: select text */
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+    >
+      {copied ? (
+        <>
+          <Check className="h-3.5 w-3.5 text-success" /> Copied!
+        </>
+      ) : (
+        <>
+          <Copy className="h-3.5 w-3.5" /> Copy
+        </>
+      )}
+    </button>
+  );
+}
 
 export function LabOutputView({ output }: { output: LabOutput }) {
   return (
@@ -84,10 +128,48 @@ export function LabOutputView({ output }: { output: LabOutput }) {
                   {f.evidence.length > 280 ? "..." : ""}&rdquo;
                 </blockquote>
               ) : null}
+              {f.copiableText ? (
+                <div className="mt-3">
+                  <div className="rounded-lg border border-border bg-muted/50 p-3 text-sm text-foreground whitespace-pre-wrap">
+                    {f.copiableText}
+                  </div>
+                  <div className="mt-2">
+                    <CopyButton text={f.copiableText} />
+                  </div>
+                </div>
+              ) : null}
             </div>
           ))
         )}
       </div>
+
+      {/* Similar Dreams (dream-ai-analyzer only) */}
+      {output.similarDreams ? <SimilarDreams data={output.similarDreams} /> : null}
+
+      {/* Follow-up questions (dream-ai-analyzer only) */}
+      {output.followUp ? (
+        <div className="rounded-xl border border-info/30 bg-info/5 p-5">
+          <div className="flex items-center gap-2">
+            <MessageCircleQuestion className="h-4 w-4 text-info" />
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-info">
+              Need more detail
+            </h3>
+          </div>
+          <p className="mt-2 text-sm text-foreground">{output.followUp.question}</p>
+          {output.followUp.missingFields.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {output.followUp.missingFields.map((field) => (
+                <Badge key={field} tone="info">
+                  Missing: {field}
+                </Badge>
+              ))}
+            </div>
+          )}
+          <p className="mt-3 text-xs text-muted-foreground">
+            Add more details to your dream description and run the analysis again for a deeper interpretation.
+          </p>
+        </div>
+      ) : null}
 
       {output.notes.length > 0 ? (
         <div className="rounded-xl border border-border bg-card p-5">

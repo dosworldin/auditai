@@ -18,6 +18,13 @@ import { LabOutputView } from "@/components/labs/LabOutputView";
 
 type LabMode = "upload" | "text" | "url";
 
+const statusTone: Record<string, "info" | "warning" | "success" | "neutral"> = {
+  Experimental: "warning",
+  Beta: "info",
+  Ready: "success",
+  "Coming Soon": "neutral",
+};
+
 export function LabClient({ lab }: { lab: LabDefinition }) {
   const router = useRouter();
   const [mode, setMode] = useState<LabMode>("upload");
@@ -117,7 +124,7 @@ export function LabClient({ lab }: { lab: LabDefinition }) {
 
             {mode === "upload" ? (
               <FileUpload
-                accept=".pdf,.docx,.txt,.csv,.png,.jpg"
+                accept=".pdf,.docx,.txt,.csv,.png,.jpg,.jpeg"
                 allowedKinds={lab.inputs.map((i) => i)}
                 onFileChange={setFile}
               />
@@ -136,7 +143,13 @@ export function LabClient({ lab }: { lab: LabDefinition }) {
               <Field label="Paste content">
                 <Textarea
                   rows={6}
-                  placeholder="Paste your content here..."
+                  placeholder={
+                    lab.slug === "dream-ai-analyzer"
+                      ? "Describe your dream in detail... e.g. 'I was flying over a neon city with a silver key in my hand.'"
+                      : lab.slug === "passive-aggressive-generator"
+                        ? "Type what you really want to say... e.g. 'Stop leaving your dirty dishes in the sink.'"
+                        : "Paste your content here..."
+                  }
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                 />
@@ -146,7 +159,7 @@ export function LabClient({ lab }: { lab: LabDefinition }) {
         </Card>
 
         <Card>
-          <CardHeader title="Configuration" subtitle="Placeholder configuration for this experiment" />
+          <CardHeader title="Configuration" subtitle="Configure this experiment" />
           <CardContent>
             <ConfigForm
               fields={lab.config}
@@ -174,6 +187,51 @@ export function LabClient({ lab }: { lab: LabDefinition }) {
           <Card>
             <CardContent>
               <ProgressBar value={35} label="Running experiment" />
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {/* Follow-up prompt for dream-ai-analyzer (multi-turn detail collection) */}
+        {output?.followUp && lab.slug === "dream-ai-analyzer" ? (
+          <Card className="animate-fade-in border-info/30">
+            <CardHeader
+              title="Add more detail"
+              subtitle="Your dream description could benefit from additional context"
+            />
+            <CardContent className="space-y-4">
+              <p className="text-sm text-foreground">{output.followUp.question}</p>
+              {output.followUp.missingFields.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {output.followUp.missingFields.map((field) => (
+                    <Badge key={field} tone="info">Missing: {field}</Badge>
+                  ))}
+                </div>
+              )}
+              <Field label="Additional details">
+                <Textarea
+                  rows={4}
+                  placeholder="Add more details about your dream (setting, emotions, how it ended, etc.)..."
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                />
+              </Field>
+              <div className="flex gap-2">
+                <Button
+                  size="lg"
+                  onClick={run}
+                  loading={running}
+                  disabled={text.trim().length === 0}
+                >
+                  <Play className="h-4 w-4" /> Re-analyze with more detail
+                </Button>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  onClick={() => setOutput(null)}
+                >
+                  Skip — view current results
+                </Button>
+              </div>
             </CardContent>
           </Card>
         ) : null}
@@ -207,9 +265,7 @@ export function LabClient({ lab }: { lab: LabDefinition }) {
               {lab.description}
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
-              <Badge
-                tone={lab.status === "Beta" ? "info" : "warning"}
-              >
+              <Badge tone={statusTone[lab.status] ?? "neutral"}>
                 {lab.status}
               </Badge>
               <Badge tone="neutral">{lab.category}</Badge>
@@ -241,6 +297,22 @@ export function LabClient({ lab }: { lab: LabDefinition }) {
             </p>
           </CardContent>
         </Card>
+
+        {lab.tables && lab.tables.length > 0 ? (
+          <Card>
+            <CardContent className="text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">Database tables</p>
+              <ul className="mt-2 space-y-1">
+                {lab.tables.map((t) => (
+                  <li key={t} className="font-mono text-xs">{t}</li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs">
+                Persistence is deferred to a future phase.
+              </p>
+            </CardContent>
+          </Card>
+        ) : null}
       </div>
     </div>
   );
