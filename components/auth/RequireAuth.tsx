@@ -52,12 +52,27 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * Require admin role. Shows access denied if not admin.
+ * Require admin role. Wraps with RequireAuth first, then checks role.
  */
 export function RequireAdmin({ children }: { children: React.ReactNode }) {
-  const { profile, loading } = useAuth();
+  return (
+    <RequireAuth>
+      <RequireAdminRole>{children}</RequireAdminRole>
+    </RequireAuth>
+  );
+}
 
-  if (loading) {
+function RequireAdminRole({ children }: { children: React.ReactNode }) {
+  const { profile, loading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && profile && profile.role !== "admin") {
+      router.replace("/dashboard");
+    }
+  }, [profile, loading, router]);
+
+  if (loading || !profile) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -65,7 +80,7 @@ export function RequireAdmin({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!profile || profile.role !== "admin") {
+  if (profile.role !== "admin") {
     return (
       <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4">
         <p className="text-lg font-semibold text-foreground">Access Denied</p>
