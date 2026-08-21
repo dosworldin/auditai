@@ -1,15 +1,14 @@
 "use client";
 
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth/context";
 import { Loader2 } from "lucide-react";
 
 /**
- * Client-side auth guard. Redirects to /auth if not authenticated.
- * Preserves the intended destination in returnTo.
+ * Inner component that reads searchParams (must be inside Suspense).
  */
-export function RequireAuth({ children }: { children: React.ReactNode }) {
+function RequireAuthGuard({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -32,6 +31,24 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
   if (!user) return null;
 
   return <>{children}</>;
+}
+
+/**
+ * Client-side auth guard. Redirects to /auth if not authenticated.
+ * Preserves the intended destination in returnTo.
+ */
+export function RequireAuth({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[50vh] items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      }
+    >
+      <RequireAuthGuard>{children}</RequireAuthGuard>
+    </Suspense>
+  );
 }
 
 /**
