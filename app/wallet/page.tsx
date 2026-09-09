@@ -162,16 +162,18 @@ export default function WalletPage() {
                 ))}
                 <Button
                   className="w-full"
-                  onClick={() => setTopUp(true)}
-                  disabled={topUp || !selectedPack}
+                  onClick={() => {
+                    if (selectedPack) {
+                      window.location.href = `/checkout?pack=${encodeURIComponent(selectedPack.label)}`;
+                    }
+                  }}
+                  disabled={!selectedPack}
                 >
                   <CreditCard className="h-4 w-4" /> Purchase {selectedPack?.label ?? ""}
                 </Button>
-                {topUp && (
-                  <p className="text-sm text-success animate-fade-in">
-                    Payment processing is coming soon. Credits will be added to your account after payment integration.
-                  </p>
-                )}
+                <p className="text-xs text-muted-foreground">
+                  You&apos;ll complete the payment securely at checkout via the available gateways.
+                </p>
               </CardContent>
             </Card>
           </div>

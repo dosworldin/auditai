@@ -21,8 +21,8 @@ const faqs = [
     a: "Each audit run consumes a number of credits based on the tool and its depth. Free tools may have promotional free uses configured by the admin.",
   },
   {
-    q: "Does StoryVerse have real payments?",
-    a: "StoryVerse has a built-in revenue model with 30/70 book sale splits and 70/30 paid voting splits. Payment processing is simulated; real payment integration is coming soon.",
+    q: "How do author earnings work in StoryVerse?",
+    a: "StoryVerse has a built-in revenue model with 30/70 book sale splits and 70/30 paid voting splits. Authors accumulate earnings in their StoryVerse wallet and can request payouts once they meet the minimum threshold.",
   },
 ];
 

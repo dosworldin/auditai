@@ -6,6 +6,7 @@ import { requireAuth, deductCredits, checkPromotionUsage } from "@/lib/auth/sess
 import { getSupabaseServer } from "@/lib/db/supabase-server";
 import { getTool } from "@/lib/tools/registry";
 import { rateLimit, rateLimitResponse } from "@/lib/ratelimit";
+import { resolveToolCredits } from "@/lib/pricing/tool-pricing";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -79,7 +80,11 @@ export async function POST(request: Request) {
 
   const { payload } = validated;
   const toolDef = getTool(payload.toolSlug);
-  const creditsNeeded = toolDef?.pricing.creditsPerRun ?? 1;
+  // Admin pricing override wins; registry pricing is the fallback.
+  const creditsNeeded = await resolveToolCredits(
+    payload.toolSlug,
+    toolDef?.pricing.creditsPerRun ?? 1,
+  );
 
   // --- Check credits or promotion ---
   let usedFreePromotion = false;

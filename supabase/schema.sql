@@ -549,6 +549,10 @@ create policy "Users can read own library"
   on public.storyverse_library for select
   using (auth.uid() = user_id);
 
+create policy "Users can add to own library"
+  on public.storyverse_library for insert
+  with check (auth.uid() = user_id);
+
 create table public.storyverse_invitations (
   id uuid primary key default uuid_generate_v4(),
   story_id uuid not null references public.storyverse_stories(id),
@@ -822,5 +826,8 @@ insert into public.admin_settings (key, value, category, description) values
   ('payment_custom_qr_upi_id', '""', 'payments', 'UPI ID for QR generation (UPI only, no bank details in QR)'),
   ('payment_custom_instructions', '[]', 'payments', 'Payment instructions shown to user (list of strings)'),
   ('payment_custom_currency', '"INR"', 'payments', 'Currency symbol/code for the custom gateway'),
-  ('ocr_languages', '"eng"', 'ocr', 'OCR languages for scanned documents (comma-separated 3-letter codes, e.g. eng,hin,spa; eng always included)')
+  ('ocr_languages', '"eng"', 'ocr', 'OCR languages for scanned documents (comma-separated 3-letter codes, e.g. eng,hin,spa; eng always included)'),
+  ('credit_packs', 'null', 'billing', 'Credit packs shown on pricing/checkout. JSON array of {label, credits, price, tagline?, featured?}. NULL = defaults.'),
+  ('tool_prices', '{}', 'billing', 'Per-tool credit overrides. JSON object {toolSlug: credits}. Missing slugs use registry defaults.'),
+  ('lab_prices', '{}', 'billing', 'Per-lab credit overrides. JSON object {labSlug: credits}. Missing slugs default to 1.')
 on conflict (key) do nothing;

@@ -7,6 +7,8 @@ interface PackSetting {
   label: string;
   credits: number;
   price: number;
+  tagline?: string;
+  featured?: boolean;
 }
 
 const DEFAULT_PACKS: PackSetting[] = [
@@ -42,7 +44,13 @@ export async function GET() {
       const credits = Number(rec.credits);
       const price = Number(rec.price);
       if (label && Number.isFinite(credits) && credits > 0 && Number.isFinite(price) && price >= 0) {
-        parsed.push({ label, credits, price });
+        parsed.push({
+          label,
+          credits,
+          price,
+          ...(typeof rec.tagline === "string" && rec.tagline ? { tagline: rec.tagline } : {}),
+          ...(rec.featured === true ? { featured: true } : {}),
+        });
       }
     }
     if (parsed.length > 0) {

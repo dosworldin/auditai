@@ -5,6 +5,7 @@ import { getLab } from "@/lib/labs/registry";
 import { requireAuth, deductCredits, checkPromotionUsage } from "@/lib/auth/session";
 import { getSupabaseServer } from "@/lib/db/supabase-server";
 import { rateLimit, rateLimitResponse } from "@/lib/ratelimit";
+import { resolveLabCredits } from "@/lib/pricing/tool-pricing";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -86,7 +87,8 @@ export async function POST(request: Request) {
     );
   }
 
-  const creditsNeeded = 1; // Labs use 1 credit per run
+  // Admin pricing override wins; default 1 credit per lab run.
+  const creditsNeeded = await resolveLabCredits(payload.labSlug, 1);
 
   // --- Check credits or promotion ---
   let usedFreePromotion = false;

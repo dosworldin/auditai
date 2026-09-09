@@ -61,6 +61,8 @@ const defaultSettings: SettingsData = {
   ai: { ai_primary_provider: "deepseek", ai_fallback_provider: "gemini" },
   billing: { credit_value: 0.10 },
   promotion: { promotion_enabled: true, promotion_uses_per_tool: 1 },
+  tools: { tool_prices: {} },
+  labs: { lab_prices: {} },
   storyverse: {
     storyverse_book_platform_percent: 30,
     storyverse_book_author_percent: 70,
@@ -164,6 +166,59 @@ export default function AdminPage() {
   useEffect(() => {
     if (tab === "payments") loadPayments();
   }, [tab, loadPayments]);
+
+  // --- Tool/Lab credit pricing state ---
+  const [toolPrices, setToolPrices] = useState<Record<string, number>>({});
+  const [labPrices, setLabPrices] = useState<Record<string, number>>({});
+  const [priceEdits, setPriceEdits] = useState<Record<string, string>>({});
+  const [creditPacksDraft, setCreditPacksDraft] = useState<string>("");
+
+  useEffect(() => {
+    if (tab === "tools" || tab === "labs") {
+      setToolPrices((settings.tools?.tool_prices as Record<string, number>) ?? {});
+      setLabPrices((settings.labs?.lab_prices as Record<string, number>) ?? {});
+    }
+  }, [tab, settings]);
+
+  // Load credit packs draft when settings arrive or Settings tab opens
+  useEffect(() => {
+    if (tab === "settings") {
+      const packs = settings.billing?.credit_packs;
+      setCreditPacksDraft(Array.isArray(packs) ? JSON.stringify(packs, null, 2) : "");
+    }
+  }, [tab, settings]);
+
+  const saveToolPrice = async (slug: string, fallback: number) => {
+    const raw = priceEdits[slug];
+    if (raw === undefined) return;
+    const next = { ...toolPrices };
+    if (raw.trim() === "" || Number(raw) === fallback) {
+      delete next[slug]; // back to registry default
+    } else {
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0) return;
+      next[slug] = n;
+    }
+    setToolPrices(next);
+    setPriceEdits((p) => { const q = { ...p }; delete q[slug]; return q; });
+    await saveSetting("tool_prices", next);
+  };
+
+  const saveLabPrice = async (slug: string, fallback: number) => {
+    const raw = priceEdits[slug];
+    if (raw === undefined) return;
+    const next = { ...labPrices };
+    if (raw.trim() === "" || Number(raw) === fallback) {
+      delete next[slug];
+    } else {
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0) return;
+      next[slug] = n;
+    }
+    setLabPrices(next);
+    setPriceEdits((p) => { const q = { ...p }; delete q[slug]; return q; });
+    await saveSetting("lab_prices", next);
+  };
 
   const loadUsers = useCallback(async (q?: string) => {
     setUsersLoading(true);
@@ -393,6 +448,40 @@ export default function AdminPage() {
                   </CardContent>
                 </Card>
                 <Card>
+                  <CardHeader
+                    title="Credit Packs (Wallet/Pricing)"
+                    subtitle='Shown on /pricing and /checkout. JSON array: [{"label":"Starter Pack","credits":100,"price":4.99,"tagline":"For occasional audits","featured":false}]'
+                  />
+                  <CardContent className="space-y-4">
+                    <Field
+                      label="Packs JSON"
+                      help="Leave empty to use built-in defaults. Invalid JSON will not save."
+                    >
+                      <textarea
+                        rows={6}
+                        className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs"
+                        value={creditPacksDraft}
+                        onChange={(e) => setCreditPacksDraft(e.target.value)}
+                        onBlur={() => {
+                          if (!creditPacksDraft.trim()) return;
+                          try {
+                            const parsed = JSON.parse(creditPacksDraft);
+                            if (Array.isArray(parsed)) {
+                              saveSetting("credit_packs", parsed);
+                            } else {
+                              setSaveMessage("Credit packs must be a JSON array");
+                              setTimeout(() => setSaveMessage(""), 4000);
+                            }
+                          } catch {
+                            setSaveMessage("Invalid JSON — not saved");
+                            setTimeout(() => setSaveMessage(""), 4000);
+                          }
+                        }}
+                      />
+                    </Field>
+                  </CardContent>
+                </Card>
+                <Card>
                   <CardHeader title="AI Providers" />
                   <CardContent className="space-y-4">
                     <Field label="Primary Provider">
@@ -577,32 +666,76 @@ export default function AdminPage() {
 
         {tab === "tools" && (
           <Card>
-            <Table head={<><Th>Tool</Th><Th>Category</Th><Th>Inputs</Th><Th>Credits</Th><Th>Status</Th></>}>
-              {TOOL_REGISTRY.map((tool) => (
-                <tr key={tool.slug}>
-                  <Td><Link href={`/tools/${tool.slug}`} className="inline-flex items-center gap-2 font-medium text-foreground hover:text-primary"><ToolIcon icon={tool.icon} accentKey={tool.accent} size="sm" />{tool.name}</Link></Td>
-                  <Td className="text-muted-foreground">{tool.category}</Td>
-                  <Td className="text-muted-foreground">{tool.inputs.length} types</Td>
-                  <Td className="text-muted-foreground">{tool.pricing.creditsPerRun}</Td>
-                  <Td><Badge tone="success">Live</Badge></Td>
-                </tr>
-              ))}
-            </Table>
+            <CardHeader
+              title="Tools"
+              subtitle="Edit the credit cost per run. Clear a field to restore the default."
+            />
+            <CardContent>
+              <Table head={<><Th>Tool</Th><Th>Category</Th><Th>Inputs</Th><Th>Credits / run</Th><Th>Status</Th></>}>
+                {TOOL_REGISTRY.map((tool) => {
+                  const effective = toolPrices[tool.slug] ?? tool.pricing.creditsPerRun;
+                  const isOverridden = toolPrices[tool.slug] !== undefined;
+                  return (
+                    <tr key={tool.slug}>
+                      <Td><Link href={`/tools/${tool.slug}`} className="inline-flex items-center gap-2 font-medium text-foreground hover:text-primary"><ToolIcon icon={tool.icon} accentKey={tool.accent} size="sm" />{tool.name}</Link></Td>
+                      <Td className="text-muted-foreground">{tool.category}</Td>
+                      <Td className="text-muted-foreground">{tool.inputs.length} types</Td>
+                      <Td>
+                        <span className="inline-flex items-center gap-2">
+                          <Input
+                            type="number"
+                            min={0}
+                            className="w-20"
+                            value={priceEdits[tool.slug] ?? String(effective)}
+                            onChange={(e) => setPriceEdits((p) => ({ ...p, [tool.slug]: e.target.value }))}
+                            onBlur={() => saveToolPrice(tool.slug, tool.pricing.creditsPerRun)}
+                          />
+                          {isOverridden ? <Badge tone="info">override</Badge> : <span className="text-xs text-muted-foreground">default {tool.pricing.creditsPerRun}</span>}
+                        </span>
+                      </Td>
+                      <Td><Badge tone="success">Live</Badge></Td>
+                    </tr>
+                  );
+                })}
+              </Table>
+            </CardContent>
           </Card>
         )}
 
         {tab === "labs" && (
           <Card>
-            <Table head={<><Th>Module</Th><Th>Category</Th><Th>Status</Th><Th>Inputs</Th></>}>
-              {LAB_REGISTRY.map((lab) => (
-                <tr key={lab.slug}>
-                  <Td><Link href={`/labs/${lab.slug}`} className="inline-flex items-center gap-2 font-medium text-foreground hover:text-primary"><ToolIcon icon={lab.icon} accentKey={lab.accent} size="sm" />{lab.name}</Link></Td>
-                  <Td className="text-muted-foreground">{lab.category}</Td>
-                  <Td><Badge tone={lab.status === "Coming Soon" ? "warning" : "success"}>{lab.status}</Badge></Td>
-                  <Td className="text-muted-foreground">{lab.inputs.length} types</Td>
-                </tr>
-              ))}
-            </Table>
+            <CardHeader
+              title="Labs"
+              subtitle="Edit the credit cost per run. Clear a field to restore the default (1 credit)."
+            />
+            <CardContent>
+              <Table head={<><Th>Module</Th><Th>Category</Th><Th>Status</Th><Th>Credits / run</Th></>}>
+                {LAB_REGISTRY.map((lab) => {
+                  const effective = labPrices[lab.slug] ?? 1;
+                  const isOverridden = labPrices[lab.slug] !== undefined;
+                  return (
+                    <tr key={lab.slug}>
+                      <Td><Link href={`/labs/${lab.slug}`} className="inline-flex items-center gap-2 font-medium text-foreground hover:text-primary"><ToolIcon icon={lab.icon} accentKey={lab.accent} size="sm" />{lab.name}</Link></Td>
+                      <Td className="text-muted-foreground">{lab.category}</Td>
+                      <Td><Badge tone={lab.status === "Coming Soon" ? "warning" : "success"}>{lab.status}</Badge></Td>
+                      <Td>
+                        <span className="inline-flex items-center gap-2">
+                          <Input
+                            type="number"
+                            min={0}
+                            className="w-20"
+                            value={priceEdits[lab.slug] ?? String(effective)}
+                            onChange={(e) => setPriceEdits((p) => ({ ...p, [lab.slug]: e.target.value }))}
+                            onBlur={() => saveLabPrice(lab.slug, 1)}
+                          />
+                          {isOverridden ? <Badge tone="info">override</Badge> : <span className="text-xs text-muted-foreground">default 1</span>}
+                        </span>
+                      </Td>
+                    </tr>
+                  );
+                })}
+              </Table>
+            </CardContent>
           </Card>
         )}
 

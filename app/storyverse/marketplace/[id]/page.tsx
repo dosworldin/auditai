@@ -110,7 +110,6 @@ export default function StoryVerseMarketplaceDetailPage() {
               <p>Revenue model: 30% platform / 70% author pool (book sales).</p>
               <p>Paid voting: 70% platform / 30% author pool.</p>
               <p>Author shares are frozen at publication via immutable snapshots.</p>
-              <p>Purchase processing is simulated — real payment integration coming soon.</p>
             </CardContent>
           </Card>
         </div>
@@ -120,7 +119,23 @@ export default function StoryVerseMarketplaceDetailPage() {
             <CardContent className="space-y-4">
               <Button
                 className="w-full"
-                onClick={() => setPurchased(true)}
+                onClick={async () => {
+                  try {
+                    const res = await fetch(`/api/storyverse/library`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ storyId: story.id }),
+                    });
+                    if (res.ok) {
+                      setPurchased(true);
+                    } else {
+                      const data = await res.json().catch(() => null);
+                      alert(data?.error ?? "Could not add to library.");
+                    }
+                  } catch {
+                    alert("Could not add to library.");
+                  }
+                }}
                 disabled={purchased}
               >
                 {purchased ? "Added to Library" : <><CreditCard className="h-4 w-4" /> Get this story</>}
