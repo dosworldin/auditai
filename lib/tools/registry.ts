@@ -49,14 +49,14 @@ import type {
 } from "@/lib/types";
 
 /* ------------------------------------------------------------------ */
-/* Blueprint defaults                                                  */
+/* Pricing defaults (admin can override per-tool via admin panel)      */
 /* ------------------------------------------------------------------ */
 
-export const PLACEHOLDER_PRICE_NOTE =
-  "Placeholder pricing - configured in a future phase.";
+export const PRICING_NOTE =
+  "Credits are charged per run. Platform admins can adjust tool pricing at any time.";
 
 function price(tier: PricingInfo["tier"], usd: number, credits: number): PricingInfo {
-  return { tier, priceUsd: usd, creditsPerRun: credits, notes: PLACEHOLDER_PRICE_NOTE };
+  return { tier, priceUsd: usd, creditsPerRun: credits, notes: PRICING_NOTE };
 }
 
 const cfgReviewDepth: ConfigField = {

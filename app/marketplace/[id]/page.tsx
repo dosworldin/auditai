@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ArrowLeft, Download, Package, Plus } from "lucide-react";
-import { Container, BlueprintNote } from "@/components/layout/Container";
+import { Container } from "@/components/layout/Container";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -24,7 +24,7 @@ export default function MarketplaceDetailPage() {
     <Container className="py-8">
       <PageHeader
         title={displayName}
-        description="Blueprint listing detail page."
+        description="Extension detail page."
         icon={<Package className="h-5 w-5" />}
         breadcrumbs={[
           { label: "Marketplace", href: "/marketplace" },
@@ -32,12 +32,7 @@ export default function MarketplaceDetailPage() {
         ]}
       />
 
-      <div className="mb-6">
-        <BlueprintNote>
-          Listing details are placeholders. Installation, purchasing and
-          licensing arrive in a future phase.
-        </BlueprintNote>
-      </div>
+
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
@@ -50,14 +45,14 @@ export default function MarketplaceDetailPage() {
                     {displayName}
                   </h2>
                   <p className="text-sm text-muted-foreground">
-                    Extension - Marketplace blueprint
+                    Extension — AuditAI Marketplace
                   </p>
                 </div>
               </div>
               <p className="mt-4 leading-relaxed text-muted-foreground">
-                This listing demonstrates the marketplace product page structure.
-                Full descriptions, screenshots, version history, and reviews
-                will be populated in a future phase.
+                An official AuditAI extension. Purchasing and installation are
+                managed directly through the marketplace — no external
+                downloads or third-party accounts required.
               </p>
             </CardContent>
           </Card>
@@ -65,8 +60,8 @@ export default function MarketplaceDetailPage() {
           <Card>
             <CardHeader title="Overview" />
             <CardContent className="space-y-2 text-sm text-muted-foreground">
-              <p>Version: 1.0.0 (blueprint)</p>
-              <p>Compatibility: AuditAI Platform Blueprint 1</p>
+              <p>Version: 1.0.0</p>
+              <p>Compatibility: AuditAI Platform</p>
               <p>Requires: none</p>
             </CardContent>
           </Card>

@@ -32,7 +32,7 @@ export default function ToolsPage() {
     <Container className="py-8">
       <PageHeader
         title="Audit Tools"
-        description="A professional catalog of document audit tools. Each tool has a blueprint UI, configuration schema, and report structure ready for future implementation."
+        description="A professional catalog of document audit tools. Upload a document, paste text, or submit a URL — each tool runs a full analysis and produces a structured report."
         icon={<Grid3X3 className="h-5 w-5" />}
       />
 

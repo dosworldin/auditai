@@ -1,9 +1,7 @@
 #!/bin/bash
 
-# AuditAI Platform - Blueprint Phase 1 startup script.
-# Frontend-only blueprint (no backend service yet in this phase).
-# When a backend is introduced, it will be started here in the background
-# and the Next.js dev server will proxy /api to it.
+# AuditAI Platform startup script.
+# Next.js frontend + API routes backed by Supabase (auth, database, storage).
 
 cd /workspace
 
@@ -12,5 +10,5 @@ if [ ! -d "node_modules" ]; then
   npm install --no-audit --no-fund
 fi
 
-# Start the frontend dev server (exposed preview port)
+# Start the Next.js dev server (exposed preview port)
 npm run dev

@@ -235,9 +235,8 @@ export default function LandingPage() {
         </div>
         <div className="mt-6">
           <BlueprintNote>
-            This is Blueprint Phase 1. Tool UIs, routes and module structures
-            are production-ready, while business logic, scoring, AI prompts,
-            and payments are intentionally deferred to future phases.
+            Every tool runs real analysis on your documents — upload a file,
+            paste text, or submit a URL and get an instant audit report.
           </BlueprintNote>
         </div>
       </Container>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Bookmark,
@@ -24,9 +24,8 @@ import type { SelectedFile } from "@/components/ui/FileUpload";
 import { Input, Field, Textarea } from "@/components/ui/Field";
 import { ProgressBar } from "@/components/ui/Feedback";
 import { ConfigForm, useConfigValues } from "@/components/tools/ConfigForm";
-import { ReportHeader, ReportSectionPlaceholder } from "@/components/tools/ReportSkeleton";
-import { AuditReportView } from "@/components/tools/AuditReportView";
 import { formatUsd } from "@/lib/utils";
+import { AuditReportView } from "@/components/tools/AuditReportView";
 import { classifyOcrNeed } from "@/lib/processing/blueprint";
 
 type InputMode = "upload" | "url" | "text";
@@ -53,6 +52,24 @@ export function ToolClient({ tool }: { tool: ToolDefinition }) {
   const [step, setStep] = useState(0);
   const [error, setError] = useState("");
   const [report, setReport] = useState<AuditReport | null>(null);
+  const [effectiveCredits, setEffectiveCredits] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/pricing/tool-costs")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { costs?: Record<string, number> } | null) => {
+        if (!cancelled && data?.costs && typeof data.costs[tool.slug] === "number") {
+          setEffectiveCredits(data.costs[tool.slug]);
+        }
+      })
+      .catch(() => {
+        /* fall back to registry pricing */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tool.slug]);
 
   const hasUrlSupport = tool.inputs.includes("url");
   const hasTextSupport =
@@ -129,7 +146,7 @@ export function ToolClient({ tool }: { tool: ToolDefinition }) {
   };
 
   const displayName =
-    currentMode === "upload" && file ? file.name : currentMode === "url" ? url : "Past text input";
+    currentMode === "upload" && file ? file.name : currentMode === "url" ? url : "Pasted text input";
 
   return (
     <div className="grid gap-6 lg:grid-cols-3">
@@ -210,7 +227,7 @@ export function ToolClient({ tool }: { tool: ToolDefinition }) {
         <Card>
           <CardHeader
             title="Audit settings"
-            subtitle="Configuration schema for this tool (blueprint)"
+            subtitle="Tune how this tool analyzes your document"
             icon={<Settings2 className="h-4 w-4" />}
           />
           <CardContent>
@@ -241,7 +258,7 @@ export function ToolClient({ tool }: { tool: ToolDefinition }) {
             Back to tools
           </Button>
           <span className="text-xs text-muted-foreground">
-            ~{tool.pricing.creditsPerRun} credit per run - pricing placeholder
+            ~{effectiveCredits ?? tool.pricing.creditsPerRun} credit per run
           </span>
         </div>
 
@@ -289,20 +306,7 @@ export function ToolClient({ tool }: { tool: ToolDefinition }) {
 
         {status === "done" ? (
           <div className="space-y-4 animate-fade-in">
-            {report ? (
-              <AuditReportView report={report} />
-            ) : (
-              <>
-                <ReportHeader
-                  toolName={tool.name}
-                  documentName={displayName}
-                  generatedAt={new Date().toLocaleString()}
-                />
-                {tool.reportSections.map((section, i) => (
-                  <ReportSectionPlaceholder key={section.title} section={section} index={i} />
-                ))}
-              </>
-            )}
+            {report ? <AuditReportView report={report} /> : null}
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={() => router.push("/history")}>
                 <Bookmark className="h-4 w-4" /> Save this report
@@ -335,7 +339,7 @@ export function ToolClient({ tool }: { tool: ToolDefinition }) {
         <Card>
           <CardHeader
             title="Pricing"
-            subtitle="Placeholder - configured in a future phase"
+            subtitle="Admin-configured pricing"
             icon={<CircleDollarSign className="h-4 w-4" />}
           />
           <CardContent className="space-y-3">
@@ -352,7 +356,7 @@ export function ToolClient({ tool }: { tool: ToolDefinition }) {
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">Credits / run</span>
               <span className="font-medium text-foreground">
-                {tool.pricing.creditsPerRun}
+                {effectiveCredits ?? tool.pricing.creditsPerRun}
               </span>
             </div>
             <div className="flex items-center justify-between text-sm">

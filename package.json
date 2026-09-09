@@ -2,7 +2,7 @@
   "name": "auditai-platform",
   "version": "0.1.0",
   "private": true,
-  "description": "AuditAI Platform - Blueprint Phase 1 (40 audit tools, Labs, StoryVerse)",
+  "description": "AuditAI Platform (40 audit tools, Labs, StoryVerse)",
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",

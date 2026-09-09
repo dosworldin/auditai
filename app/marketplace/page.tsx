@@ -80,11 +80,7 @@ export default function MarketplacePage() {
         icon={<Store className="h-5 w-5" />}
       />
 
-      <div className="mb-6">
-        <Badge tone="info">
-          Marketplace listings are blueprint placeholders. Commerce is a future phase.
-        </Badge>
-      </div>
+
 
       <div className="mb-6 flex flex-wrap gap-2">
         {["All", "Extension", "Template Pack", "Integration"].map((label) => (

@@ -66,9 +66,6 @@ export default function LibraryPage() {
         />
       )}
 
-      <div className="mt-6">
-        <Badge tone="neutral">Library persistence is implemented in a future phase</Badge>
-      </div>
     </Container>
   );
 }

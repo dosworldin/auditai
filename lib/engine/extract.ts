@@ -344,7 +344,7 @@ export async function fetchUrlText(
       redirect: "follow",
       signal: controller.signal,
       headers: {
-        "user-agent": "AuditAI-Blueprint/1.0 (+authorized website audit)",
+        "user-agent": "AuditAI/1.0 (+authorized website audit)",
         accept: "text/html,application/xhtml+xml,text/plain,*/*",
       },
     });

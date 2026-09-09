@@ -1222,7 +1222,7 @@ export async function runLab(payload: LabRunPayload): Promise<LabOutput> {
           confidence: 1,
         }),
       ],
-      notes: ["This lab will be available in a future phase."],
+      notes: ["This lab has been disabled by the platform."],
       disclaimer: "Lab outputs are isolated experimental results and do not affect production audit results.",
     };
   }

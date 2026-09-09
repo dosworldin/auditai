@@ -308,7 +308,7 @@ export function LabClient({ lab }: { lab: LabDefinition }) {
                 ))}
               </ul>
               <p className="mt-2 text-xs">
-                Persistence is deferred to a future phase.
+                These experiments run in isolation and never affect production audit results.
               </p>
             </CardContent>
           </Card>
