@@ -230,14 +230,13 @@ export const LAB_REGISTRY: LabDefinition[] = [
     "Social Escape Assistant",
     "Generate a believable exit script for awkward social situations. Location-aware, context-sensitive, zero guilt.",
     "Experimental AI",
-    "Coming Soon",
+    "Experimental",
     ["text"],
     Hand,
     "amber",
     [cfgLanguage],
     {
       tables: ["labs_social_escape_requests", "labs_social_escape_outputs"],
-      comingSoon: true,
     },
   ),
 

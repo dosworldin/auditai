@@ -6,7 +6,7 @@ import { requireAuth, deductCredits, checkPromotionUsage } from "@/lib/auth/sess
 import { getSupabaseServer } from "@/lib/db/supabase-server";
 import { getTool } from "@/lib/tools/registry";
 import { rateLimit, rateLimitResponse } from "@/lib/ratelimit";
-import { resolveToolCredits } from "@/lib/pricing/tool-pricing";
+import { resolveToolCredits, isToolDisabled } from "@/lib/pricing/tool-pricing";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -80,6 +80,15 @@ export async function POST(request: Request) {
 
   const { payload } = validated;
   const toolDef = getTool(payload.toolSlug);
+
+  // --- Admin tool on/off gate ---
+  if (await isToolDisabled(payload.toolSlug)) {
+    return NextResponse.json(
+      { error: `"${toolDef?.name ?? payload.toolSlug}" is temporarily disabled by the administrator. Please try again later.` },
+      { status: 403 },
+    );
+  }
+
   // Admin pricing override wins; registry pricing is the fallback.
   const creditsNeeded = await resolveToolCredits(
     payload.toolSlug,

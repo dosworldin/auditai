@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth, deductCredits } from "@/lib/auth/session";
 import { getSupabaseServer } from "@/lib/db/supabase-server";
+import { runAiEditor } from "@/lib/ai/aiEditor";
 
 export const dynamic = "force-dynamic";
 
@@ -200,7 +201,7 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: "You cannot vote for your own contribution" }, { status: 400 });
   }
 
-  // For paid votes, deduct credits
+  // For paid votes, deduct credits and split revenue (platform vs author pool)
   let creditsCost = 0;
   if (voteType === "paid") {
     const { data: priceSetting } = await supabase
@@ -216,6 +217,65 @@ export async function PUT(request: Request) {
     }
 
     await deductCredits(user.id, creditsCost, "storyverse_charge", "Paid vote", contributionId, "storyverse_vote");
+
+    // Revenue split: platform% kept, author pool% credited to the story owner's
+    // StoryVerse wallet (admin-controlled via StoryVerse Economy settings).
+    try {
+      const { data: pctRows } = await supabase
+        .from("admin_settings")
+        .select("key, value")
+        .in("key", ["storyverse_vote_platform_percent", "storyverse_vote_author_percent"]);
+      const pct = Object.fromEntries((pctRows ?? []).map((r) => [r.key, Number(r.value)]));
+      const platformPct = Number.isFinite(pct.storyverse_vote_platform_percent) ? pct.storyverse_vote_platform_percent : 70;
+      const authorPct = Number.isFinite(pct.storyverse_vote_author_percent) ? pct.storyverse_vote_author_percent : 30;
+      const platformAmount = (creditsCost * platformPct) / 100;
+      const authorAmount = (creditsCost * authorPct) / 100;
+
+      const { data: storyOwner } = await supabase
+        .from("storyverse_stories")
+        .select("owner_id")
+        .eq("id", storyId)
+        .single();
+
+      await supabase.from("storyverse_revenue").insert({
+        story_id: storyId,
+        revenue_type: "paid_vote_sale",
+        gross_amount: creditsCost,
+        platform_amount: platformAmount,
+        author_pool_amount: authorAmount,
+        distribution: storyOwner?.owner_id ? [{ userId: storyOwner.owner_id, amount: authorAmount }] : [],
+        currency: "CREDITS",
+      });
+
+      if (storyOwner?.owner_id && authorAmount > 0) {
+        // Credit the author pool to the story owner's wallet
+        const { data: existingWallet } = await supabase
+          .from("storyverse_wallets")
+          .select("id, pending_balance, total_earned")
+          .eq("user_id", storyOwner.owner_id)
+          .single();
+        if (existingWallet) {
+          await supabase
+            .from("storyverse_wallets")
+            .update({
+              pending_balance: Number(existingWallet.pending_balance ?? 0) + authorAmount,
+              total_earned: Number(existingWallet.total_earned ?? 0) + authorAmount,
+            })
+            .eq("id", existingWallet.id);
+        } else {
+          await supabase.from("storyverse_wallets").insert({
+            user_id: storyOwner.owner_id,
+            pending_balance: authorAmount,
+            available_balance: 0,
+            total_earned: authorAmount,
+            total_payouts: 0,
+          });
+        }
+      }
+    } catch (splitErr) {
+      // Split failure must never block the vote itself
+      console.warn("Paid vote revenue split failed:", splitErr instanceof Error ? splitErr.message : splitErr);
+    }
   }
 
   const weight = 1;
@@ -353,7 +413,7 @@ async function finalizeRound(
     await deductCredits(winner.author_id, aiEditorCost, "ai_editor_charge", `AI Editor: Round ${round.round_number}`, winner.id, "storyverse_ai_editor");
 
     // Create AI Editor request
-    await supabase
+    const { data: editorRequest } = await supabase
       .from("storyverse_ai_editor_requests")
       .insert({
         story_id: storyId,
@@ -363,7 +423,51 @@ async function finalizeRound(
         original_content: winner.content,
         status: "processing",
         credits_cost: aiEditorCost,
+      })
+      .select("id")
+      .single();
+
+    // Run the review through the admin-managed AI provider chain (best-effort:
+    // a failed review never blocks the round; results are persisted when ready).
+    try {
+      const { data: storyRow } = await supabase
+        .from("storyverse_stories")
+        .select("title, description")
+        .eq("id", storyId)
+        .single();
+      const { data: priorChapters } = await supabase
+        .from("storyverse_chapters")
+        .select("content")
+        .eq("story_id", storyId)
+        .order("chapter_number", { ascending: true });
+
+      const result = await runAiEditor({
+        storyTitle: storyRow?.title ?? "Untitled",
+        storyDescription: storyRow?.description ?? "",
+        storySoFar: (priorChapters ?? []).map((c) => c.content).join("\n\n"),
+        contribution: winner.content,
       });
+
+      await supabase
+        .from("storyverse_ai_editor_requests")
+        .update({
+          continuity_result: result.continuity,
+          copyright_result: result.copyright,
+          suggested_rewrite: result.suggestedRewrite,
+          status: result.error ? "failed" : "completed",
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", editorRequest?.id);
+    } catch (err) {
+      await supabase
+        .from("storyverse_ai_editor_requests")
+        .update({
+          status: "failed",
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", editorRequest?.id);
+      console.warn("AI editor run failed:", err instanceof Error ? err.message : err);
+    }
   }
 
   // Log canon selection

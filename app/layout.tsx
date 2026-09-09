@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/lib/theme/theme-engine";
 import { AuthProvider } from "@/lib/auth/context";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
+import { LiveActivityToasts } from "@/components/activity/LiveActivityToasts";
 
 export const metadata: Metadata = {
   title: {
@@ -34,6 +35,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               <Navbar />
               <main className="flex-1">{children}</main>
               <Footer />
+              <LiveActivityToasts />
             </div>
           </AuthProvider>
         </ThemeProvider>

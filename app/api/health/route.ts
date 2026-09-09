@@ -26,10 +26,14 @@ export function GET() {
       queue: "none_synchronous",
     },
     ai: {
-      primary: process.env.AI_PRIMARY_PROVIDER || "deepseek",
-      fallback: process.env.AI_FALLBACK_PROVIDER || "gemini",
-      deepseek: Boolean(process.env.DEEPSEEK_API_KEY),
-      gemini: Boolean(process.env.GEMINI_API_KEY),
+      providerChain: "admin_managed",
+      chainKey: "ai_provider_chain (admin_settings → Admin → AI Providers)",
+      builtins: {
+        deepseek: Boolean(process.env.DEEPSEEK_API_KEY),
+        gemini: Boolean(process.env.GEMINI_API_KEY),
+      },
+      customProviderCount: "configured in admin settings",
+      failover: "automatic on limit/rate/quota errors",
     },
     processing: {
       bullmq: false,

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { Activity, FlaskConical, LayoutGrid, ServerCog, ShieldCheck, Table2, Settings, Loader2, Wallet, CheckCircle2, XCircle, ExternalLink, Users, LifeBuoy, ListChecks, Banknote } from "lucide-react";
+import { Activity, FlaskConical, LayoutGrid, ServerCog, ShieldCheck, Table2, Settings, Loader2, Wallet, CheckCircle2, XCircle, ExternalLink, Users, LifeBuoy, ListChecks, Banknote, Bot, ArrowUp, ArrowDown, Trash2, Plus } from "lucide-react";
 import { Container } from "@/components/layout/Container";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader } from "@/components/ui/Card";
@@ -35,6 +35,11 @@ interface ManualPaymentRequest {
   created_at: string;
 }
 
+function maskKey(key: string): string {
+  if (key.length <= 8) return "••••";
+  return `${key.slice(0, 4)}••••${key.slice(-4)}`;
+}
+
 function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
     <button
@@ -58,10 +63,12 @@ function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (
 
 const defaultSettings: SettingsData = {
   general: { platform_name: "AuditAI", maintenance_mode: false },
-  ai: { ai_primary_provider: "deepseek", ai_fallback_provider: "gemini" },
-  billing: { credit_value: 0.10 },
+  ai: { ai_provider_chain: [
+    { id: "deepseek", name: "DeepSeek", type: "builtin", enabled: true },
+  ] as unknown[] },
+  billing: { credit_value: 0.10, credit_packs: [] as unknown[] },
   promotion: { promotion_enabled: true, promotion_uses_per_tool: 1 },
-  tools: { tool_prices: {} },
+  tools: { tool_prices: {}, disabled_tools: {} },
   labs: { lab_prices: {} },
   storyverse: {
     storyverse_book_platform_percent: 30,
@@ -167,16 +174,88 @@ export default function AdminPage() {
     if (tab === "payments") loadPayments();
   }, [tab, loadPayments]);
 
+  // --- AI provider chain state ---
+  interface AIChainEntry {
+    id: string;
+    name: string;
+    type: "builtin" | "custom";
+    baseUrl?: string;
+    model?: string;
+    apiKeyEnv?: string;
+    apiKey?: string;
+    enabled?: boolean;
+  }
+  const [aiChain, setAiChain] = useState<AIChainEntry[]>([
+    { id: "deepseek", name: "DeepSeek", type: "builtin", enabled: true },
+  ]);
+  const [aiChainLoaded, setAiChainLoaded] = useState(false);
+  const [newApiKeyDrafts, setNewApiKeyDrafts] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!aiChainLoaded && settings.ai?.ai_provider_chain) {
+      const chain = settings.ai.ai_provider_chain as unknown;
+      if (Array.isArray(chain) && chain.length > 0) {
+        setAiChain(chain as AIChainEntry[]);
+      }
+      setAiChainLoaded(true);
+    }
+  }, [settings.ai?.ai_provider_chain, aiChainLoaded]);
+
+  const persistAiChain = async (next: AIChainEntry[]) => {
+    setAiChain(next);
+    await saveSetting("ai_provider_chain", next);
+  };
+
+  const moveAiEntry = (index: number, dir: -1 | 1) => {
+    const next = [...aiChain];
+    const target = index + dir;
+    if (target < 0 || target >= next.length) return;
+    [next[index], next[target]] = [next[target], next[index]];
+    persistAiChain(next);
+  };
+
+  const updateAiEntry = (index: number, patch: Partial<AIChainEntry>) => {
+    const next = aiChain.map((e, i) => (i === index ? { ...e, ...patch } : e));
+    setAiChain(next);
+  };
+
+  const removeAiEntry = (id: string) => {
+    persistAiChain(aiChain.filter((e) => e.id !== id));
+  };
+
+  const addCustomAiProvider = () => {
+    const id = `custom-${Date.now().toString(36)}`;
+    persistAiChain([
+      ...aiChain,
+      { id, name: "New Custom Provider", type: "custom", baseUrl: "", model: "", enabled: false },
+    ]);
+  };
+
+  const saveAiEntryKey = (index: number) => {
+    const entry = aiChain[index];
+    const draft = newApiKeyDrafts[entry.id];
+    if (!draft) return;
+    updateAiEntry(index, { apiKey: draft });
+    persistAiChain(aiChain.map((e, i) => (i === index ? { ...e, apiKey: draft } : e)));
+    setNewApiKeyDrafts((p) => {
+      const q = { ...p };
+      delete q[entry.id];
+      return q;
+    });
+  };
+
   // --- Tool/Lab credit pricing state ---
   const [toolPrices, setToolPrices] = useState<Record<string, number>>({});
   const [labPrices, setLabPrices] = useState<Record<string, number>>({});
   const [priceEdits, setPriceEdits] = useState<Record<string, string>>({});
   const [creditPacksDraft, setCreditPacksDraft] = useState<string>("");
+  const [disabledTools, setDisabledTools] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (tab === "tools" || tab === "labs") {
       setToolPrices((settings.tools?.tool_prices as Record<string, number>) ?? {});
       setLabPrices((settings.labs?.lab_prices as Record<string, number>) ?? {});
+      setDisabledTools((settings.tools?.disabled_tools as Record<string, boolean>) ?? {});
     }
   }, [tab, settings]);
 
@@ -397,6 +476,7 @@ export default function AdminPage() {
             items={[
               { id: "overview", label: "Overview", icon: <Activity className="h-4 w-4" /> },
               { id: "settings", label: "Settings", icon: <Settings className="h-4 w-4" /> },
+              { id: "ai", label: "AI Providers", icon: <Bot className="h-4 w-4" /> },
               { id: "payments", label: "Payments", icon: <Wallet className="h-4 w-4" /> },
               { id: "payouts", label: "Payouts", icon: <Banknote className="h-4 w-4" /> },
               { id: "users", label: "Users", icon: <Users className="h-4 w-4" /> },
@@ -500,9 +580,22 @@ export default function AdminPage() {
                       <Field label="Book: Author Pool %"><Input type="number" value={String(settings.storyverse?.storyverse_book_author_percent ?? 70)} onChange={(e) => updateSetting("storyverse", "storyverse_book_author_percent", Number(e.target.value))} onBlur={() => saveSetting("storyverse_book_author_percent", settings.storyverse?.storyverse_book_author_percent)} /></Field>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
-                      <Field label="AI Editor Credits"><Input type="number" value={String(settings.storyverse?.storyverse_ai_editor_price ?? 10)} onChange={(e) => updateSetting("storyverse", "storyverse_ai_editor_price", Number(e.target.value))} onBlur={() => saveSetting("storyverse_ai_editor_price", settings.storyverse?.storyverse_ai_editor_price)} /></Field>
+                      <Field label="AI Editor Credits" help="Charged to the round WINNER when the AI Editor runs its continuity + copyright review on their winning contribution. Default 10.">
+                        <Input type="number" value={String(settings.storyverse?.storyverse_ai_editor_price ?? 10)} onChange={(e) => updateSetting("storyverse", "storyverse_ai_editor_price", Number(e.target.value))} onBlur={() => saveSetting("storyverse_ai_editor_price", settings.storyverse?.storyverse_ai_editor_price)} />
+                      </Field>
                       <Field label="Inactivity Hold Days"><Input type="number" value={String(settings.storyverse?.storyverse_pool_inactivity_hold_days ?? 7)} onChange={(e) => updateSetting("storyverse", "storyverse_pool_inactivity_hold_days", Number(e.target.value))} onBlur={() => saveSetting("storyverse_pool_inactivity_hold_days", settings.storyverse?.storyverse_pool_inactivity_hold_days)} /></Field>
                     </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <Field label="Paid Vote: Platform %" help="Share of paid-vote credits kept by the platform.">
+                        <Input type="number" min={0} max={100} value={String(settings.storyverse?.storyverse_vote_platform_percent ?? 70)} onChange={(e) => updateSetting("storyverse", "storyverse_vote_platform_percent", Number(e.target.value))} onBlur={() => saveSetting("storyverse_vote_platform_percent", settings.storyverse?.storyverse_vote_platform_percent)} />
+                      </Field>
+                      <Field label="Paid Vote: Author Pool %" help="Share of paid-vote credits that flows to the story's author pool (the story owner's StoryVerse wallet).">
+                        <Input type="number" min={0} max={100} value={String(settings.storyverse?.storyverse_vote_author_percent ?? 30)} onChange={(e) => updateSetting("storyverse", "storyverse_vote_author_percent", Number(e.target.value))} onBlur={() => saveSetting("storyverse_vote_author_percent", settings.storyverse?.storyverse_vote_author_percent)} />
+                      </Field>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Paid vote rule: when a reader spends {String(settings.storyverse?.storyverse_paid_vote_price ?? 1)} credit(s) on a paid vote, the amount is split — {String(settings.storyverse?.storyverse_vote_platform_percent ?? 70)}% platform, {String(settings.storyverse?.storyverse_vote_author_percent ?? 30)}% to the story's author pool.
+                    </p>
                   </CardContent>
                 </Card>
 
@@ -602,6 +695,142 @@ export default function AdminPage() {
           </div>
         )}
 
+        {tab === "ai" && (
+          <div className="space-y-6">
+            <Card>
+              <CardHeader
+                title="AI Provider Chain"
+                subtitle="Priority order = failover order. When a provider hits its limit (429 / quota / rate limit), the request automatically routes to the next one. DeepSeek & Gemini built-ins are always kept as a last-resort safety net."
+                actions={
+                  <Button size="sm" onClick={addCustomAiProvider}>
+                    <Plus className="h-4 w-4" /> Add custom provider
+                  </Button>
+                }
+              />
+              <CardContent className="space-y-4">
+                {aiChain.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-muted-foreground">
+                    No providers configured — built-in DeepSeek/Gemini (env keys) will still be used as fallback.
+                  </p>
+                ) : (
+                  aiChain.map((entry, index) => (
+                    <div key={entry.id} className="rounded-xl border border-border p-4 space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-accent text-xs font-bold text-accent-foreground">
+                            {index + 1}
+                          </span>
+                          <div>
+                            <p className="font-medium text-foreground">{entry.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {entry.type === "builtin" ? "Built-in provider" : "Custom (OpenAI-compatible)"}
+                              {entry.apiKeyEnv ? ` · key from env: ${entry.apiKeyEnv}` : entry.apiKey ? " · key saved in settings" : ""}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Toggle
+                            checked={entry.enabled !== false}
+                            onChange={(v) => persistAiChain(aiChain.map((e, i) => (i === index ? { ...e, enabled: v } : e)))}
+                          />
+                          <Button size="sm" variant="outline" disabled={index === 0} onClick={() => moveAiEntry(index, -1)} aria-label="Move up">
+                            <ArrowUp className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button size="sm" variant="outline" disabled={index === aiChain.length - 1} onClick={() => moveAiEntry(index, 1)} aria-label="Move down">
+                            <ArrowDown className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => removeAiEntry(entry.id)} aria-label="Remove">
+                            <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Field label="Display name">
+                          <Input
+                            value={entry.name}
+                            onChange={(e) => updateAiEntry(index, { name: e.target.value })}
+                            onBlur={() => persistAiChain(aiChain)}
+                          />
+                        </Field>
+                        <Field label="API key env var (optional)">
+                          <Input
+                            placeholder="e.g. OPENROUTER_API_KEY"
+                            value={entry.apiKeyEnv ?? ""}
+                            onChange={(e) => updateAiEntry(index, { apiKeyEnv: e.target.value })}
+                            onBlur={() => persistAiChain(aiChain)}
+                          />
+                        </Field>
+                        {entry.type === "custom" ? (
+                          <>
+                            <Field label="Base URL (OpenAI-compatible)">
+                              <Input
+                                placeholder="https://api.example.com/v1"
+                                value={entry.baseUrl ?? ""}
+                                onChange={(e) => updateAiEntry(index, { baseUrl: e.target.value })}
+                                onBlur={() => persistAiChain(aiChain)}
+                              />
+                            </Field>
+                            <Field label="Model">
+                              <Input
+                                placeholder="e.g. mistral-small-latest"
+                                value={entry.model ?? ""}
+                                onChange={(e) => updateAiEntry(index, { model: e.target.value })}
+                                onBlur={() => persistAiChain(aiChain)}
+                              />
+                            </Field>
+                          </>
+                        ) : (
+                          <Field label="Model (optional override)" help="Leave empty to use the built-in default model.">
+                            <Input
+                              placeholder="default"
+                              value={entry.model ?? ""}
+                              onChange={(e) => updateAiEntry(index, { model: e.target.value })}
+                              onBlur={() => persistAiChain(aiChain)}
+                            />
+                          </Field>
+                        )}
+                        <Field
+                          label="API key (or leave empty if using env var)"
+                          help={entry.apiKey ? `Saved: ${maskKey(entry.apiKey)}` : "Key is stored server-side in admin settings and never exposed to users."}
+                        >
+                          <div className="flex gap-2">
+                            <Input
+                              type="password"
+                              placeholder={entry.apiKey ? "••••••••" : "sk-..."}
+                              value={newApiKeyDrafts[entry.id] ?? ""}
+                              onChange={(e) => setNewApiKeyDrafts((p) => ({ ...p, [entry.id]: e.target.value }))}
+                            />
+                            <Button size="sm" variant="outline" disabled={!newApiKeyDrafts[entry.id]} onClick={() => saveAiEntryKey(index)}>
+                              Save
+                            </Button>
+                          </div>
+                        </Field>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader title="Limit detection" subtitle="Which error responses count as “limit exhausted” and trigger failover. Comma-separated keywords (default: 429, rate limit, quota, insufficient, exceeded, billing, balance)." />
+              <CardContent>
+                <Field label="Limit keywords" help="Advanced: matched case-insensitively against the provider error text. Also settable via the AI_LIMIT_ERROR_MATCHERS env var (JSON array).">
+                  <Input
+                    placeholder="429, quota, exceeded"
+                    value={String(settings.ai?.ai_limit_matchers ?? "")}
+                    onChange={(e) => updateSetting("ai", "ai_limit_matchers", e.target.value)}
+                    onBlur={() => saveSetting("ai_limit_matchers", settings.ai?.ai_limit_matchers)}
+                  />
+                </Field>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Note: keywords are applied at runtime by the AI engine; the default set already covers rate limits, quota and billing errors.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
         {tab === "payments" && (
           <div className="space-y-6">
             <Card>
@@ -668,13 +897,14 @@ export default function AdminPage() {
           <Card>
             <CardHeader
               title="Tools"
-              subtitle="Edit the credit cost per run. Clear a field to restore the default."
+              subtitle="Edit the credit cost per run and toggle tools on/off. Clear a field to restore the default."
             />
             <CardContent>
               <Table head={<><Th>Tool</Th><Th>Category</Th><Th>Inputs</Th><Th>Credits / run</Th><Th>Status</Th></>}>
                 {TOOL_REGISTRY.map((tool) => {
                   const effective = toolPrices[tool.slug] ?? tool.pricing.creditsPerRun;
                   const isOverridden = toolPrices[tool.slug] !== undefined;
+                  const isDisabled = disabledTools[tool.slug] === true;
                   return (
                     <tr key={tool.slug}>
                       <Td><Link href={`/tools/${tool.slug}`} className="inline-flex items-center gap-2 font-medium text-foreground hover:text-primary"><ToolIcon icon={tool.icon} accentKey={tool.accent} size="sm" />{tool.name}</Link></Td>
@@ -693,7 +923,21 @@ export default function AdminPage() {
                           {isOverridden ? <Badge tone="info">override</Badge> : <span className="text-xs text-muted-foreground">default {tool.pricing.creditsPerRun}</span>}
                         </span>
                       </Td>
-                      <Td><Badge tone="success">Live</Badge></Td>
+                      <Td>
+                        <span className="inline-flex items-center gap-2">
+                          <Toggle
+                            checked={!isDisabled}
+                            onChange={(v) => {
+                              const next = { ...disabledTools };
+                              if (v) delete next[tool.slug];
+                              else next[tool.slug] = true;
+                              setDisabledTools(next);
+                              saveSetting("disabled_tools", next);
+                            }}
+                          />
+                          {isDisabled ? <Badge tone="destructive">Off</Badge> : <Badge tone="success">Live</Badge>}
+                        </span>
+                      </Td>
                     </tr>
                   );
                 })}

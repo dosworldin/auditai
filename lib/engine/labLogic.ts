@@ -1036,12 +1036,126 @@ function futureAiPlaceholder(label: string): Handler {
    HANDLERS MAP
    ===================================================================== */
 
+const socialEscapeAssistant: Handler = (text, config) => {
+  const low = text.toLowerCase();
+  const words = countWords(text);
+
+  /* Situation detection — pick the closest escape script family */
+  const situations: { id: string; label: string; keywords: string[] }[] = [
+    { id: "meeting", label: "Meeting / call", keywords: ["meeting", "call", "zoom", "standup", "boss", "manager", "office"] },
+    { id: "party", label: "Party / gathering", keywords: ["party", "wedding", "dinner", "guests", "function", "celebration"] },
+    { id: "date", label: "Date / one-on-one", keywords: ["date", "coffee", "lunch", "dinner with", "texting", "reply"] },
+    { id: "errand", label: "Errand / queue", keywords: ["shop", "queue", "line", "waiting", "bank", "grocery"] },
+    { id: "family", label: "Family / relatives", keywords: ["family", "relative", "uncle", "aunt", "in-laws", "parents"] },
+  ];
+  const situation = situations.find((s) => s.keywords.some((k) => low.includes(k))) ?? situations[0];
+
+  /* Urgency from the text ("NOW" signals a fast exit) */
+  const urgent = /\b(now|right away|asap|immediately|urgent|quick)\b/i.test(text);
+
+  const scripts: Record<string, { quick: string[]; graceful: string[] }> = {
+    meeting: {
+      quick: [
+        "I'm sorry to cut this short — something urgent just came up and I need to handle it immediately. Let's continue this in the next session.",
+        "I just got a page from IT about my account. I need to jump on that right now — my apologies!",
+      ],
+      graceful: [
+        "This has been really valuable. I have a hard stop in a few minutes, but let's pick this up — I'll send a summary of my thoughts afterward.",
+        "I need to step out for another commitment, but I'd love to continue this conversation later this week.",
+      ],
+    },
+    party: {
+      quick: [
+        "I'm so sorry, I just realized I need to be somewhere early tomorrow — I have to head out. It was wonderful seeing everyone!",
+        "Excuse me for a moment — I have to take this call. (Do not come back. You're free.)",
+      ],
+      graceful: [
+        "I promised myself I'd leave while the conversation was still good — this is that moment. Thank you for a lovely time!",
+        "I'm going to make a graceful exit before I overstay my welcome. Let's do this again soon!",
+      ],
+    },
+    date: {
+      quick: [
+        "I just remembered I have an early morning tomorrow — I should get going. Thank you for tonight!",
+        "My friend just texted needing help with something. I'm so sorry, I need to go — I had a good time though!",
+      ],
+      graceful: [
+        "I've really enjoyed this, but I should head back — I want to beat the traffic. Let's do this again sometime.",
+        "I need to wrap up soon, but before I go — thank you, this was genuinely nice.",
+      ],
+    },
+    errand: {
+      quick: [
+        "Oh — I just remembered I left something on the stove. I have to run. Excuse me!",
+        "I think I've been called forward / my number came up. Excuse me just a second — enjoy the rest of your day!",
+      ],
+      graceful: [
+        "I'm going to finish up here — it was nice bumping into you. Take care!",
+        "I need to get going, but I appreciate the chat. Have a good one!",
+      ],
+    },
+    family: {
+      quick: [
+        "I just got a work call I have to take — I'll be right back. (You will not be right back.)",
+        "I promised to help someone with something urgent — I need to step out for a bit. Save my dessert!",
+      ],
+      graceful: [
+        "It's getting late and I have an early start — I should head home. Thank you for having me!",
+        "I need to head out, but before I go — it's been really good catching up with everyone.",
+      ],
+    },
+  };
+
+  const scriptSet = urgent ? scripts[situation.id].quick : scripts[situation.id].graceful;
+  const generated = scriptSet[Math.floor(Math.random() * scriptSet.length)];
+
+  /* Detect politeness level of the situation for a light metric */
+  const formalHits = ["office", "meeting", "client", "interview", "professional"].filter((k) => low.includes(k));
+  const findings: LabFinding[] = [
+    lf({
+      id: "se-script",
+      label: `Exit script (${urgent ? "quick exit" : "graceful exit"})`,
+      detail: `Tailored for: ${situation.label}. ${urgent ? "Urgency detected — a fast, plausible exit was chosen." : "A graceful exit keeps the relationship warm."}`,
+      severity: "Info",
+      confidence: 0.7,
+      copiableText: generated,
+    }),
+    lf({
+      id: "se-situation",
+      label: "Situation analysis",
+      detail: `Detected context: ${situation.label}. Word count: ${words}. ${formalHits.length > 0 ? "Formal setting detected — keep the exit polite and blameless." : "Casual setting — a light, friendly exit works best."}`,
+      severity: "Info",
+      confidence: 0.6,
+      evidence: situation.keywords.filter((k) => low.includes(k)).join(", ") || "General social situation",
+    }),
+  ];
+
+  const metrics: Record<string, string | number> = {
+    situation: situation.label,
+    exitSpeed: urgent ? "quick" : "graceful",
+    wordCount: words,
+  };
+
+  const notes = [
+    "Scripts are location-aware suggestions — deliver them with confidence and eye contact.",
+    "Zero guilt guaranteed. The exit is your right.",
+    "Scripts are generated locally; nothing you type is stored or sent anywhere.",
+  ];
+
+  return {
+    summary: `Generated a ${urgent ? "quick" : "graceful"} exit script for a ${situation.label.toLowerCase()} situation.`,
+    metrics,
+    findings,
+    notes,
+  };
+};
+
 const HANDLERS: Record<string, Handler> = {
   /* New: Labs-1 phase */
   "dream-ai-analyzer": dreamAnalyzer,
   "kalesh-analyzer": kaleshAnalyzer,
   "passive-aggressive-generator": passiveAggressiveAnalyzer,
-  /* social-escape-assistant: Coming Soon — no handler needed */
+  "social-escape-assistant": socialEscapeAssistant,
 
   /* Existing labs */
   "sentiment-tone-analyzer": sentimentToneAnalyzer,
