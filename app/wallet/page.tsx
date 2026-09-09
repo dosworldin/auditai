@@ -13,11 +13,11 @@ import { Table, Td, Th } from "@/components/ui/Table";
 import { RequireAuth } from "@/components/auth/RequireAuth";
 import { useAuth } from "@/lib/auth/context";
 
-const CREDIT_PACKS = [
-  { label: "Starter Pack", credits: 100, price: 4.99 },
-  { label: "Pro Pack", credits: 400, price: 14.99 },
-  { label: "Business Pack", credits: 1000, price: 29.99 },
-];
+interface CreditPack {
+  label: string;
+  credits: number;
+  price: number;
+}
 
 interface Transaction {
   type: string;
@@ -26,35 +26,78 @@ interface Transaction {
   created_at: string;
 }
 
+const FALLBACK_PACKS: CreditPack[] = [
+  { label: "Starter Pack", credits: 100, price: 4.99 },
+  { label: "Pro Pack", credits: 400, price: 14.99 },
+  { label: "Business Pack", credits: 1000, price: 29.99 },
+];
+
 export default function WalletPage() {
   const { profile, refreshProfile } = useAuth();
-  const [selected, setSelected] = useState("Pro Pack");
+  const [packs, setPacks] = useState<CreditPack[]>(FALLBACK_PACKS);
+  const [pricingSource, setPricingSource] = useState<"admin" | "default">("default");
+  const [selected, setSelected] = useState<string>("");
   const [topUp, setTopUp] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loadingTx, setLoadingTx] = useState(true);
 
+  // Load runtime pricing from admin settings (server API keeps source of truth).
   useEffect(() => {
-    async function loadTransactions() {
+    let cancelled = false;
+    async function loadPricing() {
       try {
-        const res = await fetch("/api/storyverse/wallet");
+        const res = await fetch("/api/pricing/credit-packs");
         if (res.ok) {
           const data = await res.json();
-          if (data.wallet?.transactions) {
-            setTransactions(data.wallet.transactions);
+          if (!cancelled && Array.isArray(data.packs) && data.packs.length > 0) {
+            setPacks(data.packs);
+            setPricingSource("admin");
+            setSelected(data.packs[0]?.label ?? "");
+            return;
           }
         }
       } catch {
-        // Failed
+        // fall through to defaults
+      }
+      if (!cancelled) {
+        setSelected(FALLBACK_PACKS[0].label);
+      }
+    }
+    loadPricing();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Load real transactions from the credit ledger.
+  useEffect(() => {
+    let cancelled = false;
+    async function loadTransactions() {
+      try {
+        const res = await fetch("/api/wallet/transactions");
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled) {
+            setTransactions(data.transactions ?? []);
+          }
+        }
+      } catch {
+        // keep empty
       } finally {
-        setLoadingTx(false);
+        if (!cancelled) setLoadingTx(false);
       }
     }
     loadTransactions();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const credits = profile?.credits ?? 0;
-  const selectedPack = CREDIT_PACKS.find((p) => p.label === selected);
-  const usedPercentage = Math.min(100, (credits / 100) * 100);
+  const selectedPack = packs.find((p) => p.label === selected);
+  // Gauge fills relative to the largest available pack size.
+  const maxPackCredits = Math.max(...packs.map((p) => p.credits), 100);
+  const usedPercentage = Math.min(100, Math.round((credits / maxPackCredits) * 100));
 
   return (
     <RequireAuth>
@@ -85,9 +128,16 @@ export default function WalletPage() {
             </Card>
 
             <Card>
-              <CardHeader title="Credit packs" subtitle="One-time top-ups" />
+              <CardHeader
+                title="Credit packs"
+                subtitle={
+                  pricingSource === "admin"
+                    ? "One-time top-ups (pricing set by admin)"
+                    : "One-time top-ups (default pricing)"
+                }
+              />
               <CardContent className="space-y-3">
-                {CREDIT_PACKS.map((pack) => (
+                {packs.map((pack) => (
                   <button
                     key={pack.label}
                     type="button"
@@ -113,9 +163,9 @@ export default function WalletPage() {
                 <Button
                   className="w-full"
                   onClick={() => setTopUp(true)}
-                  disabled={topUp}
+                  disabled={topUp || !selectedPack}
                 >
-                  <CreditCard className="h-4 w-4" /> Purchase {selected}
+                  <CreditCard className="h-4 w-4" /> Purchase {selectedPack?.label ?? ""}
                 </Button>
                 {topUp && (
                   <p className="text-sm text-success animate-fade-in">

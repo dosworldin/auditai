@@ -38,7 +38,7 @@ export function isImageKind(kind: string): boolean {
 export async function extractFileText(
   kindRaw: string,
   base64: string,
-  opts: { allowOcr?: boolean } = {},
+  opts: { allowOcr?: boolean; ocrLanguages?: string } = {},
 ): Promise<ExtractionResult> {
   const kind = classifyKind(kindRaw);
   const size = bytesFromBase64(base64);
@@ -130,7 +130,7 @@ export async function extractFileText(
       }
       // No text layer -> scanned PDF. OCR only when required.
       if (opts.allowOcr !== false) {
-        const ocr = await runOcrOnBuffer(buffer, "pdf");
+        const ocr = await runOcrOnBuffer(buffer, "pdf", opts.ocrLanguages);
         if (ocr && ocr.text.length > 0) {
           return {
             text: normalizeText(ocr.text),
@@ -216,7 +216,7 @@ export async function extractFileText(
 
   if (isImageKind(kind)) {
     if (opts.allowOcr !== false) {
-      const ocr = await runOcrOnBuffer(buffer, kind);
+      const ocr = await runOcrOnBuffer(buffer, kind, opts.ocrLanguages);
       if (ocr && ocr.text.length > 0) {
         return {
           text: normalizeText(ocr.text),
@@ -255,16 +255,35 @@ export async function extractFileText(
 
 let ocrUnavailable: string | null = null;
 
+/**
+ * Default OCR languages, ordered by priority. `eng` is always included as a
+ * final fallback. Language packs are downloaded on demand by tesseract.js and
+ * cached in-process. Admin can override the list via the `ocr_languages`
+ * admin setting (comma-separated, e.g. "eng,hin,spa").
+ */
+export const DEFAULT_OCR_LANGUAGES = "eng";
+
+function sanitizeOcrLanguages(raw: string | undefined): string {
+  const valid = /^[a-z]{3}(-[a-zA-Z]+)?$/;
+  const langs = (raw ?? "")
+    .split(",")
+    .map((l) => l.trim().toLowerCase())
+    .filter((l) => l.length > 0 && valid.test(l));
+  if (!langs.includes("eng")) langs.push("eng");
+  return langs.slice(0, 5).join("+");
+}
+
 async function runOcrOnBuffer(
   buffer: Buffer,
   kind: string,
+  languages: string = DEFAULT_OCR_LANGUAGES,
 ): Promise<{ text: string } | null> {
   if (ocrUnavailable) return null;
   try {
     const tesseract = await import("tesseract.js");
     const result = await tesseract.recognize(
       buffer,
-      "eng",
+      sanitizeOcrLanguages(languages),
       { logger: () => undefined },
     );
     return { text: result.data?.text ?? "" };
@@ -356,8 +375,25 @@ export async function extractForAudit(
   const { file, url, text } = payload;
 
   if (file && file.base64 && file.kind) {
+    // Resolve admin-configured OCR languages (server-side only).
+    let ocrLanguages: string | undefined;
+    try {
+      const { getSupabaseServer } = await import("@/lib/db/supabase-server");
+      const supabase = await getSupabaseServer();
+      const { data: setting } = await supabase
+        .from("admin_settings")
+        .select("value")
+        .eq("key", "ocr_languages")
+        .single();
+      const v = setting?.value;
+      if (typeof v === "string" && v.trim()) ocrLanguages = v;
+    } catch {
+      // Fall back to default languages
+    }
+
     const result = await extractFileText(file.kind, file.base64, {
       allowOcr: true,
+      ocrLanguages,
     });
     return { ...result, sourceDescription: result.sourceDescription };
   }

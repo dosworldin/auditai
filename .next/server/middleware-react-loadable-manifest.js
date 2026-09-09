@@ -1,1 +1,1 @@
-self.__REACT_LOADABLE_MANIFEST="{}"
+self.__REACT_LOADABLE_MANIFEST='{"app/auth/page.tsx -> @/lib/db/supabase-browser":{"id":9704,"files":[]}}';

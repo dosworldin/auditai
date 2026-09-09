@@ -5,6 +5,7 @@ import { getToolLogic } from "@/lib/engine/toolLogic";
 import { requireAuth, deductCredits, checkPromotionUsage } from "@/lib/auth/session";
 import { getSupabaseServer } from "@/lib/db/supabase-server";
 import { getTool } from "@/lib/tools/registry";
+import { rateLimit, rateLimitResponse } from "@/lib/ratelimit";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -58,6 +59,10 @@ export async function POST(request: Request) {
     const status = e instanceof Error && "statusCode" in e ? (e as { statusCode: number }).statusCode : 401;
     return NextResponse.json({ error: e instanceof Error ? e.message : "Unauthorized" }, { status });
   }
+
+  // --- Rate limit (abuse guard for AI/extraction-heavy runs) ---
+  const rl = rateLimit(`audit:${user.id}`, 20, 60_000);
+  if (!rl.ok) return rateLimitResponse(rl);
 
   // --- Validate payload ---
   let body: unknown;

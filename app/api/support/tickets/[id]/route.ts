@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth, requireAdmin } from "@/lib/auth/session";
 import { getSupabaseServer } from "@/lib/db/supabase-server";
+import { sendSupportReplyEmail } from "@/lib/email/resend";
 
 export const dynamic = "force-dynamic";
 
@@ -151,6 +152,28 @@ export async function POST(
       .update({ status: "in_progress", updated_at: new Date().toISOString() })
       .eq("id", id)
       .eq("status", "open");
+
+    // Email the ticket owner (best-effort; fails silently if Resend is not configured)
+    if (!isInternal) {
+      const { data: ownerProfile } = await supabase
+        .from("profiles")
+        .select("email")
+        .eq("id", ticket.user_id)
+        .single();
+      if (ownerProfile?.email) {
+        const { data: ticketRow } = await supabase
+          .from("support_tickets")
+          .select("subject")
+          .eq("id", id)
+          .single();
+        await sendSupportReplyEmail({
+          to: ownerProfile.email,
+          ticketSubject: ticketRow?.subject ?? "your ticket",
+          replyMessage: message.trim(),
+          replyAuthor: user.profile.display_name || "The AuditAI Support Team",
+        });
+      }
+    }
   }
 
   return NextResponse.json({ reply }, { status: 201 });

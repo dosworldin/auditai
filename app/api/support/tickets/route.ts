@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth, requireAdmin } from "@/lib/auth/session";
 import { getSupabaseServer } from "@/lib/db/supabase-server";
+import { rateLimit, rateLimitResponse } from "@/lib/ratelimit";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +52,10 @@ export async function POST(request: Request) {
     const status = e instanceof Error && "statusCode" in e ? (e as { statusCode: number }).statusCode : 401;
     return NextResponse.json({ error: e instanceof Error ? e.message : "Unauthorized" }, { status });
   }
+
+  // --- Rate limit: max 5 new tickets per user per hour ---
+  const rl = rateLimit(`tickets:${user.id}`, 5, 60 * 60_000);
+  if (!rl.ok) return rateLimitResponse(rl);
 
   const body = await request.json();
   const { category, subject, message, priority } = body;

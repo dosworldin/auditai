@@ -60,6 +60,10 @@ export default function WritePage() {
   const [error, setError] = useState("");
   const [votingId, setVotingId] = useState<string | null>(null);
   const [votedIds, setVotedIds] = useState<Set<string>>(new Set());
+  const [showAgreement, setShowAgreement] = useState(false);
+  const [agreementText, setAgreementText] = useState("");
+  const [agreementLoading, setAgreementLoading] = useState(false);
+  const [agreed, setAgreed] = useState(false);
 
   const loadStory = useCallback(async () => {
     try {
@@ -99,6 +103,12 @@ export default function WritePage() {
 
       if (!res.ok) {
         const data = await res.json();
+        if (data.requiresAgreement) {
+          // Contributor Agreement required — open the acceptance flow.
+          setError("");
+          await openAgreement();
+          return;
+        }
         setError(data.error || "Failed to submit");
         return;
       }
@@ -111,6 +121,43 @@ export default function WritePage() {
       setError("Failed to submit contribution");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const openAgreement = async () => {
+    setShowAgreement(true);
+    setAgreementLoading(true);
+    try {
+      const res = await fetch("/api/storyverse/agreement");
+      if (res.ok) {
+        const data = await res.json();
+        setAgreementText(data.agreementText || "");
+        if (data.hasAccepted) {
+          setAgreed(true);
+        }
+      }
+    } catch {
+      // keep modal open with empty text
+    } finally {
+      setAgreementLoading(false);
+    }
+  };
+
+  const acceptAgreement = async () => {
+    setAgreementLoading(true);
+    try {
+      const res = await fetch("/api/storyverse/agreement", { method: "POST" });
+      if (res.ok) {
+        setAgreed(true);
+        setShowAgreement(false);
+      } else {
+        const data = await res.json();
+        setError(data.error || "Failed to accept agreement");
+      }
+    } catch {
+      setError("Failed to accept agreement");
+    } finally {
+      setAgreementLoading(false);
     }
   };
 
@@ -208,6 +255,38 @@ export default function WritePage() {
                     </span>
                   )}
                 </div>
+
+                {showAgreement && (
+                  <div className="rounded-xl border border-info/30 bg-info/5 p-4">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="h-4 w-4 text-info" />
+                      <p className="text-sm font-semibold text-foreground">
+                        Contributor Agreement required
+                      </p>
+                    </div>
+                    {agreementLoading ? (
+                      <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" /> Loading agreement...
+                      </div>
+                    ) : (
+                      <>
+                        <div className="mt-3 max-h-48 overflow-y-auto rounded-lg border border-border bg-background p-3 text-xs leading-relaxed text-muted-foreground whitespace-pre-line">
+                          {agreementText || "Agreement text unavailable. Please refresh."}
+                        </div>
+                        <div className="mt-3 flex items-center gap-3">
+                          <Button size="sm" onClick={acceptAgreement} disabled={agreed || !agreementText}>
+                            {agreed ? "Accepted" : "Accept & continue"}
+                          </Button>
+                          {agreed && (
+                            <span className="inline-flex items-center gap-1 text-sm text-success animate-fade-in">
+                              <CheckCircle2 className="h-4 w-4" /> Agreement accepted — you can submit now
+                            </span>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
 

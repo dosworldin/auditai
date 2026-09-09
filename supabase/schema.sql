@@ -36,14 +36,25 @@ create policy "Users can update own profile"
   on public.profiles for update
   using (auth.uid() = id);
 
+-- SECURITY DEFINER helper: evaluates admin role WITHOUT re-triggering RLS on
+-- profiles. Referencing public.profiles directly inside a profiles policy
+-- causes infinite recursion (42P17) — always use is_admin() instead.
+create or replace function public.is_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $fn$
+  select exists (
+    select 1 from public.profiles
+    where id = auth.uid() and role = 'admin'
+  );
+$fn$;
+
 create policy "Admins can read all profiles"
   on public.profiles for select
-  using (
-    exists (
-      select 1 from public.profiles
-      where id = auth.uid() and role = 'admin'
-    )
-  );
+  using (public.is_admin());
 
 -- Auto-create profile on signup
 create or replace function public.handle_new_user()
@@ -722,3 +733,94 @@ create index idx_storyverse_revenue_story on public.storyverse_revenue(story_id)
 create index idx_credit_ledger_user on public.credit_ledger(user_id, created_at desc);
 create index idx_dream_entries_user on public.dream_entries(user_id);
 create index idx_support_tickets_status on public.support_tickets(status);
+
+-- ============================================================================
+-- 9. PAYMENTS — Gateway config, manual payment requests, proof uploads
+-- ============================================================================
+
+-- Payment requests for the custom manual gateway (QR / bank / UPI + proof upload).
+create table public.payment_requests (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  gateway text not null check (gateway in ('paypal', 'custom')),
+  purpose text not null default 'credit_pack',
+  package_label text,
+  credits numeric(12,2) not null default 0,
+  amount numeric(12,2) not null,
+  currency text not null default 'USD',
+  status text not null default 'pending' check (status in (
+    'pending', 'awaiting_proof', 'submitted', 'approved', 'rejected', 'cancelled'
+  )),
+  reference_note text,
+  proof_storage_path text,
+  reviewed_by uuid references public.profiles(id),
+  reviewed_at timestamptz,
+  review_note text,
+  credit_ledger_id uuid,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.payment_requests enable row level security;
+
+create policy "Users can read own payment requests"
+  on public.payment_requests for select
+  using (auth.uid() = user_id);
+
+create policy "Users can insert own payment requests"
+  on public.payment_requests for insert
+  with check (auth.uid() = user_id);
+
+create policy "Admins can manage all payment requests"
+  on public.payment_requests for all
+  using (
+    exists (
+      select 1 from public.profiles
+      where id = auth.uid() and role = 'admin'
+    )
+  );
+
+create index idx_payment_requests_user on public.payment_requests(user_id, created_at desc);
+create index idx_payment_requests_status on public.payment_requests(status);
+
+-- Storage bucket for payment proof uploads (screenshots/receipts).
+insert into storage.buckets (id, name, public) values ('payment-proofs', 'payment-proofs', false)
+on conflict (id) do nothing;
+
+-- Bucket policies: user can upload/read own files, admins can read everything.
+create policy "Users upload own payment proofs"
+  on storage.objects for insert
+  with check (
+    bucket_id = 'payment-proofs'
+    and auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+create policy "Users read own payment proofs"
+  on storage.objects for select
+  using (
+    bucket_id = 'payment-proofs'
+    and auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+create policy "Admins read all payment proofs"
+  on storage.objects for select
+  using (
+    bucket_id = 'payment-proofs'
+    and exists (
+      select 1 from public.profiles
+      where id = auth.uid() and role = 'admin'
+    )
+  );
+
+-- Payment gateway runtime settings (admin toggles live here).
+insert into public.admin_settings (key, value, category, description) values
+  ('payment_paypal_enabled', 'false', 'payments', 'Enable PayPal gateway at checkout'),
+  ('payment_paypal_mode', '"sandbox"', 'payments', 'PayPal mode: sandbox or live'),
+  ('payment_custom_enabled', 'false', 'payments', 'Enable custom manual gateway (QR/bank/UPI + proof upload)'),
+  ('payment_custom_india_only', 'true', 'payments', 'Show custom gateway only to India visitors'),
+  ('payment_custom_display_name', '"Bank / UPI Transfer"', 'payments', 'Custom gateway display name'),
+  ('payment_custom_qr_upi_id', '""', 'payments', 'UPI ID for QR generation (UPI only, no bank details in QR)'),
+  ('payment_custom_instructions', '[]', 'payments', 'Payment instructions shown to user (list of strings)'),
+  ('payment_custom_currency', '"INR"', 'payments', 'Currency symbol/code for the custom gateway'),
+  ('ocr_languages', '"eng"', 'ocr', 'OCR languages for scanned documents (comma-separated 3-letter codes, e.g. eng,hin,spa; eng always included)')
+on conflict (key) do nothing;

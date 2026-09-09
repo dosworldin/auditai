@@ -4,6 +4,7 @@ import { runLab } from "@/lib/engine/labLogic";
 import { getLab } from "@/lib/labs/registry";
 import { requireAuth, deductCredits, checkPromotionUsage } from "@/lib/auth/session";
 import { getSupabaseServer } from "@/lib/db/supabase-server";
+import { rateLimit, rateLimitResponse } from "@/lib/ratelimit";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -56,6 +57,10 @@ export async function POST(request: Request) {
     const status = e instanceof Error && "statusCode" in e ? (e as { statusCode: number }).statusCode : 401;
     return NextResponse.json({ error: e instanceof Error ? e.message : "Unauthorized" }, { status });
   }
+
+  // --- Rate limit (abuse guard for AI-heavy lab runs) ---
+  const rl = rateLimit(`labs:${user.id}`, 20, 60_000);
+  if (!rl.ok) return rateLimitResponse(rl);
 
   // --- Validate payload ---
   let body: unknown;

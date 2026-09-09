@@ -11,31 +11,52 @@ import { Field, Input } from "@/components/ui/Field";
 import { RequireAuth } from "@/components/auth/RequireAuth";
 import { useAuth } from "@/lib/auth/context";
 
+const COMMON_COUNTRIES = [
+  "India",
+  "United States",
+  "United Kingdom",
+  "Canada",
+  "Australia",
+  "Germany",
+  "France",
+  "Brazil",
+  "Japan",
+  "Singapore",
+  "United Arab Emirates",
+  "Other",
+];
+
 export default function AccountPage() {
   const { user, profile, refreshProfile, signOut } = useAuth();
   const [name, setName] = useState("");
+  const [country, setCountry] = useState("");
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
-  // Initialize name from profile
+  // Initialize from profile
   const displayName = name || profile?.display_name || "";
+  const currentCountry = country || profile?.country || "";
   const email = profile?.email || user?.email || "";
 
   const handleSave = async () => {
     setSaving(true);
+    setSaveError("");
     try {
-      const res = await fetch("/api/admin/settings", {
-        method: "PUT",
+      const res = await fetch("/api/profile", {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: "display_name", value: displayName }),
+        body: JSON.stringify({ display_name: displayName, country: currentCountry }),
       });
-      if (res.ok) {
-        await refreshProfile();
-        setSaved(true);
-        setTimeout(() => setSaved(false), 3000);
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error ?? "Failed to save profile");
       }
-    } catch {
-      // Failed
+      await refreshProfile();
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Failed to save profile");
     } finally {
       setSaving(false);
     }
@@ -81,6 +102,22 @@ export default function AccountPage() {
                       placeholder="Your name"
                     />
                   </Field>
+                  <Field
+                    label="Country"
+                    help="Used to show region-specific payment options (e.g. UPI in India)."
+                  >
+                    <Input
+                      list="country-options"
+                      value={currentCountry}
+                      onChange={(e) => setCountry(e.target.value)}
+                      placeholder="Select or type your country"
+                    />
+                    <datalist id="country-options">
+                      {COMMON_COUNTRIES.map((c) => (
+                        <option key={c} value={c} />
+                      ))}
+                    </datalist>
+                  </Field>
                   <Field label="Email">
                     <Input type="email" value={email} disabled />
                   </Field>
@@ -91,6 +128,9 @@ export default function AccountPage() {
                   </Button>
                   {saved && (
                     <span className="self-center text-sm text-success animate-fade-in">Saved</span>
+                  )}
+                  {saveError && (
+                    <span className="self-center text-sm text-destructive">{saveError}</span>
                   )}
                 </div>
               </CardContent>

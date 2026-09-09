@@ -1,1 +1,6 @@
-{}
+{
+  "app/auth/page.tsx -> @/lib/db/supabase-browser": {
+    "id": 9704,
+    "files": []
+  }
+}
