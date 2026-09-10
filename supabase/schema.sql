@@ -126,7 +126,12 @@ insert into public.admin_settings (key, value, category, description) values
   ('storyverse_ai_editor_enabled', 'true', 'storyverse', 'Enable AI Editor after voting'),
   ('storyverse_paid_vote_price', '1', 'storyverse', 'Credits cost for paid vote'),
   ('ai_provider_chain', '[{"id":"deepseek","name":"DeepSeek","type":"builtin","enabled":true}]', 'ai', 'Ordered AI provider failover chain (admin managed in Admin → AI Providers)'),
-  ('ai_limit_matchers', '"429, rate limit, quota, insufficient, exceeded, billing, balance"', 'ai', 'Comma-separated error keywords that count as provider limit exhaustion and trigger failover')
+  ('ai_limit_matchers', '"429, rate limit, quota, insufficient, exceeded, billing, balance"', 'ai', 'Comma-separated error keywords that count as provider limit exhaustion and trigger failover'),
+  ('storyverse_globe_enabled', 'true', 'storyverse', 'Show the live world-activity globe on /storyverse'),
+  ('storyverse_globe_min_gap_seconds', '5', 'storyverse', 'Globe: shortest random pause between flag pins'),
+  ('storyverse_globe_max_gap_seconds', '15', 'storyverse', 'Globe: longest random pause between flag pins'),
+  ('storyverse_globe_disappear_seconds', '7', 'storyverse', 'Globe: how long each pin stays visible before disappearing'),
+  ('storyverse_globe_initial_delay_seconds', '3.5', 'storyverse', 'Globe: delay before the first pin appears')
 on conflict (key) do nothing;
 
 -- ============================================================================

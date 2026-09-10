@@ -77,6 +77,11 @@ const defaultSettings: SettingsData = {
     storyverse_vote_author_percent: 30,
     storyverse_ai_editor_price: 10,
     storyverse_pool_inactivity_hold_days: 7,
+    storyverse_globe_enabled: true,
+    storyverse_globe_min_gap_seconds: 5,
+    storyverse_globe_max_gap_seconds: 15,
+    storyverse_globe_disappear_seconds: 7,
+    storyverse_globe_initial_delay_seconds: 3.5,
   },
 };
 
@@ -595,6 +600,44 @@ export default function AdminPage() {
                     </div>
                     <p className="text-xs text-muted-foreground">
                       Paid vote rule: when a reader spends {String(settings.storyverse?.storyverse_paid_vote_price ?? 1)} credit(s) on a paid vote, the amount is split — {String(settings.storyverse?.storyverse_vote_platform_percent ?? 70)}% platform, {String(settings.storyverse?.storyverse_vote_author_percent ?? 30)}% to the story's author pool.
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader
+                    title="StoryVerse Global Activity Globe"
+                    subtitle="The live world-globe on /storyverse — flags pop as community actions happen worldwide, with the platform rules panel beside it. Timing is fully controlled here."
+                  />
+                  <CardContent className="space-y-4">
+                    <div className="flex items-center justify-between rounded-xl border border-border p-4">
+                      <div>
+                        <p className="font-medium text-foreground">Globe enabled</p>
+                        <p className="text-xs text-muted-foreground">Show the activity globe on the StoryVerse home page</p>
+                      </div>
+                      <Toggle
+                        checked={Boolean(settings.storyverse?.storyverse_globe_enabled ?? true)}
+                        onChange={(v) => { updateSetting("storyverse", "storyverse_globe_enabled", v); saveSetting("storyverse_globe_enabled", v); }}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <Field label="Min gap between pins (seconds)" help="Shortest random pause before the next flag pin appears. Default 5.">
+                        <Input type="number" min={1} value={String(settings.storyverse?.storyverse_globe_min_gap_seconds ?? 5)} onChange={(e) => updateSetting("storyverse", "storyverse_globe_min_gap_seconds", Number(e.target.value))} onBlur={() => saveSetting("storyverse_globe_min_gap_seconds", settings.storyverse?.storyverse_globe_min_gap_seconds)} />
+                      </Field>
+                      <Field label="Max gap between pins (seconds)" help="Longest random pause before the next flag pin appears. Default 15.">
+                        <Input type="number" min={1} value={String(settings.storyverse?.storyverse_globe_max_gap_seconds ?? 15)} onChange={(e) => updateSetting("storyverse", "storyverse_globe_max_gap_seconds", Number(e.target.value))} onBlur={() => saveSetting("storyverse_globe_max_gap_seconds", settings.storyverse?.storyverse_globe_max_gap_seconds)} />
+                      </Field>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <Field label="Pin disappear time (seconds)" help="How long each flag pin stays visible on the globe before it disappears. Default 7.">
+                        <Input type="number" min={1} value={String(settings.storyverse?.storyverse_globe_disappear_seconds ?? 7)} onChange={(e) => updateSetting("storyverse", "storyverse_globe_disappear_seconds", Number(e.target.value))} onBlur={() => saveSetting("storyverse_globe_disappear_seconds", settings.storyverse?.storyverse_globe_disappear_seconds)} />
+                      </Field>
+                      <Field label="First pin delay (seconds)" help="Wait before the first pin appears when the page loads. Default 3.5.">
+                        <Input type="number" min={0} step={0.5} value={String(settings.storyverse?.storyverse_globe_initial_delay_seconds ?? 3.5)} onChange={(e) => updateSetting("storyverse", "storyverse_globe_initial_delay_seconds", Number(e.target.value))} onBlur={() => saveSetting("storyverse_globe_initial_delay_seconds", settings.storyverse?.storyverse_globe_initial_delay_seconds)} />
+                      </Field>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Pin content (cities, countries, actions) is deck-shuffled with no repeats until every card has been shown — cycles look natural, never robotic.
                     </p>
                   </CardContent>
                 </Card>

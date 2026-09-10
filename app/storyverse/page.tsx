@@ -16,6 +16,7 @@ import { Container } from "@/components/layout/Container";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { WorkCard } from "@/components/storyverse/WorkCard";
+import { StoryverseGlobe } from "@/components/storyverse/StoryverseGlobe";
 import { useAuth } from "@/lib/auth/context";
 import { getSupabaseBrowser } from "@/lib/db/supabase-browser";
 
@@ -103,6 +104,8 @@ export default function StoryVersePage() {
           </>
         }
       />
+
+      <StoryverseGlobe />
 
       <section className="mb-10 grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
