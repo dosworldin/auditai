@@ -44,6 +44,7 @@ const RUN_STEPS: RunStep[] = [
 export function ToolClient({ tool }: { tool: ToolDefinition }) {
   const router = useRouter();
   const [file, setFile] = useState<SelectedFile | null>(null);
+  const [secondFile, setSecondFile] = useState<SelectedFile | null>(null);
   const [url, setUrl] = useState("");
   const [text, setText] = useState("");
   const [mode, setMode] = useState<InputMode>("upload");
@@ -84,8 +85,11 @@ export function ToolClient({ tool }: { tool: ToolDefinition }) {
 
   const currentMode = runnableModes.includes(mode) ? mode : (runnableModes[0] ?? "upload");
 
+  const dual = tool.dualFile === true;
+  const dualLabels = tool.dualFileLabels ?? ["1. Primary document", "2. Second document"];
+
   const inputReady =
-    (currentMode === "upload" && file !== null) ||
+    (currentMode === "upload" && file !== null && (!dual || secondFile !== null)) ||
     (currentMode === "url" && url.trim().length > 0) ||
     (currentMode === "text" && text.trim().length > 0);
 
@@ -114,8 +118,17 @@ export function ToolClient({ tool }: { tool: ToolDefinition }) {
         binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
       }
       const base64 = btoa(binary);
-      body.documentName = file.name;
+      body.documentName = dual && secondFile ? `${file.name} + ${secondFile.name}` : file.name;
       body.file = { name: file.name, kind: file.kind, base64 };
+      if (dual && secondFile?.raw) {
+        const buf2 = await secondFile.raw.arrayBuffer();
+        const bytes2 = new Uint8Array(buf2);
+        let binary2 = "";
+        for (let i = 0; i < bytes2.length; i += CHUNK) {
+          binary2 += String.fromCharCode(...bytes2.subarray(i, i + CHUNK));
+        }
+        body.secondFile = { name: secondFile.name, kind: secondFile.kind, base64: btoa(binary2) };
+      }
     } else if (currentMode === "url") {
       body.url = url.trim();
       body.documentName = url.trim();
@@ -178,26 +191,45 @@ export function ToolClient({ tool }: { tool: ToolDefinition }) {
             ) : null}
 
             {currentMode === "upload" ? (
-              <>
-                <FileUpload
-                  accept=".pdf,.docx,.doc,.txt,.md,.png,.jpg,.jpeg"
-                  allowedKinds={tool.inputs.map((i) => i)}
-                  onFileChange={setFile}
-                />
-                {file ? (
-                  <div className="mt-3 flex items-center gap-2 text-xs">
-                    {requiresOcr ? (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-warning/30 bg-warning/10 px-2.5 py-1 text-warning">
-                        <ScanLine className="h-3 w-3" /> OCR will be required for this file type
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-success/30 bg-success/10 px-2.5 py-1 text-success">
-                        <Check className="h-3 w-3" /> Direct text extraction (no OCR needed)
-                      </span>
-                    )}
-                  </div>
-                ) : null}
-              </>
+              dual ? (
+                <div className="space-y-4">
+                  <Field label={dualLabels[0]} help="Export from your bank's website or app.">
+                    <FileUpload
+                      accept=".pdf,.xlsx,.csv,.txt"
+                      allowedKinds={["xlsx", "csv", "pdf", "txt"]}
+                      onFileChange={setFile}
+                    />
+                  </Field>
+                  <Field label={dualLabels[1]} help="Export from Tally, QuickBooks, Zoho Books, Excel, or any accounting software.">
+                    <FileUpload
+                      accept=".pdf,.xlsx,.csv,.txt"
+                      allowedKinds={["xlsx", "csv", "pdf", "txt"]}
+                      onFileChange={setSecondFile}
+                    />
+                  </Field>
+                </div>
+              ) : (
+                <>
+                  <FileUpload
+                    accept=".pdf,.docx,.doc,.txt,.md,.png,.jpg,.jpeg"
+                    allowedKinds={tool.inputs.map((i) => i)}
+                    onFileChange={setFile}
+                  />
+                  {file ? (
+                    <div className="mt-3 flex items-center gap-2 text-xs">
+                      {requiresOcr ? (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-warning/30 bg-warning/10 px-2.5 py-1 text-warning">
+                          <ScanLine className="h-3 w-3" /> OCR will be required for this file type
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-success/30 bg-success/10 px-2.5 py-1 text-success">
+                          <Check className="h-3 w-3" /> Direct text extraction (no OCR needed)
+                        </span>
+                      )}
+                    </div>
+                  ) : null}
+                </>
+              )
             ) : null}
 
             {currentMode === "url" ? (

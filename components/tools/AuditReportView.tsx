@@ -2,6 +2,7 @@
 
 import {
   AlertTriangle,
+  ArrowLeftRight,
   CheckCircle2,
   FileText,
   Gauge,
@@ -10,7 +11,7 @@ import {
   ShieldAlert,
   Sparkles,
 } from "lucide-react";
-import type { AuditReport, Finding, Severity } from "@/lib/engine/types";
+import type { AuditReport, Finding, ReconciliationSummary, Severity } from "@/lib/engine/types";
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/lib/utils";
 
@@ -83,6 +84,109 @@ function FindingCard({ finding }: { finding: Finding }) {
         <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
         <span className="text-foreground">{finding.recommendation}</span>
       </div>
+    </div>
+  );
+}
+
+const reconStat = (label: string, value: string | number, tone?: "success" | "warning" | "destructive") => (
+  <div className="rounded-xl border border-border bg-card p-4 text-center">
+    <p
+      className={cn(
+        "text-2xl font-bold",
+        tone === "success" && "text-success",
+        tone === "warning" && "text-warning",
+        tone === "destructive" && "text-destructive",
+        !tone && "text-foreground",
+      )}
+    >
+      {value}
+    </p>
+    <p className="mt-1 text-xs text-muted-foreground">{label}</p>
+  </div>
+);
+
+function ReconRows({
+  title,
+  rows,
+  tone,
+}: {
+  title: string;
+  rows: ReconciliationSummary["mismatchRows"];
+  tone: "warning" | "destructive" | "neutral";
+}) {
+  if (rows.length === 0) return null;
+  return (
+    <div>
+      <h4 className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
+        <Badge tone={tone === "destructive" ? "destructive" : tone === "warning" ? "warning" : "neutral"}>
+          {rows.length}
+        </Badge>
+        {title}
+      </h4>
+      <div className="overflow-hidden rounded-xl border border-border">
+        <table className="w-full text-left text-xs">
+          <thead className="bg-muted/60 text-muted-foreground">
+            <tr>
+              <th className="px-3 py-2 font-medium">Date</th>
+              <th className="px-3 py-2 font-medium">Description</th>
+              <th className="px-3 py-2 text-right font-medium">Amount</th>
+              <th className="px-3 py-2 font-medium">Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i} className="border-t border-border align-top">
+                <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{r.date}</td>
+                <td className="max-w-[220px] px-3 py-2 text-foreground">
+                  <span className="line-clamp-2">{r.description || "—"}</span>
+                  {r.matchedWith ? (
+                    <span className="mt-0.5 block text-[10px] text-muted-foreground">↔ {r.matchedWith}</span>
+                  ) : null}
+                </td>
+                <td className="whitespace-nowrap px-3 py-2 text-right font-medium text-foreground">
+                  {r.amount.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                  {r.diff ? (
+                    <span className="block text-[10px] font-normal text-destructive">diff {r.diff.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
+                  ) : null}
+                </td>
+                <td className="px-3 py-2 text-muted-foreground">{r.note}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ReconciliationPanel({ recon }: { recon: ReconciliationSummary }) {
+  return (
+    <div className="rounded-xl border border-border bg-card p-5">
+      <div className="flex items-center gap-2">
+        <ArrowLeftRight className="h-4 w-4 text-primary" />
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          Reconciliation results
+        </h3>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        {recon.bankStatementName} ↔ {recon.booksName} · tolerance ±{recon.tolerance.toLocaleString("en-IN")} · date window ±{recon.dateWindowDays}d · match rate {recon.matchRatePercent}%
+      </p>
+      <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-5">
+        {reconStat("Matched", recon.matched, "success")}
+        {reconStat("Amount mismatch", recon.amountMismatched, recon.amountMismatched > 0 ? "warning" : undefined)}
+        {reconStat("Missing in books", recon.missingInBooks, recon.missingInBooks > 0 ? "destructive" : undefined)}
+        {reconStat("Missing in bank", recon.missingInBank, recon.missingInBank > 0 ? "warning" : undefined)}
+        {reconStat("Duplicates", recon.duplicates, recon.duplicates > 0 ? "warning" : undefined)}
+      </div>
+      <div className="mt-4 space-y-5">
+        <ReconRows title="Amount mismatches" rows={recon.mismatchRows} tone="warning" />
+        <ReconRows title="In bank, not recorded in books" rows={recon.missingInBooksRows} tone="destructive" />
+        <ReconRows title="In books, not found in bank" rows={recon.missingInBankRows} tone="warning" />
+        <ReconRows title="Matched sample" rows={recon.matchedSample} tone="neutral" />
+      </div>
+      <p className="mt-4 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+        Bank gross total {recon.bankTotal.toLocaleString("en-IN", { maximumFractionDigits: 2 })} across {recon.bankRows} rows · Books gross total {recon.booksTotal.toLocaleString("en-IN", { maximumFractionDigits: 2 })} across {recon.bookRows} rows. Only the top rows per category are shown; open the findings below for the full prioritized list.
+      </p>
     </div>
   );
 }
@@ -161,6 +265,11 @@ export function AuditReportView({ report }: { report: AuditReport }) {
         </div>
         <p className="mt-2 text-sm leading-relaxed text-foreground">{report.summary}</p>
       </div>
+
+      {/* Bank reconciliation results */}
+      {report.reconciliation ? (
+        <ReconciliationPanel recon={report.reconciliation} />
+      ) : null}
 
       {/* Critical findings */}
       {report.criticalFindings.length > 0 ? (

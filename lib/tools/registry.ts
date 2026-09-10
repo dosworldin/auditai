@@ -39,6 +39,7 @@ import {
   Truck,
   UserCheck,
   Wallet,
+  FileSpreadsheet,
 } from "lucide-react";
 import type {
   ConfigField,
@@ -429,6 +430,54 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
     reportSections: FINANCE_SECTIONS,
     icon: HandCoins,
     accent: "emerald",
+  },
+  {
+    slug: "bank-reconciliation-auditor",
+    name: "Bank Reconciliation Auditor",
+    tagline: "Match your books against your bank statement",
+    description:
+      "Uploads your bank statement export and your books/ledger export side by side, matches every transaction, and reports matched, mismatched, and missing entries — the fastest way to a clean bank reconciliation.",
+    category: "Finance",
+    inputs: ["xlsx", "csv", "pdf", "txt"],
+    pricing: price("Business", 19.99, 5),
+    config: [
+      {
+        key: "amountTolerance",
+        label: "Amount tolerance (±)",
+        type: "number",
+        min: 0,
+        max: 10000,
+        default: 1,
+        help: "Transactions whose amounts differ by up to this much still count as matched (rounding, small fees).",
+      },
+      {
+        key: "dateWindowDays",
+        label: "Date matching window (days)",
+        type: "number",
+        min: 0,
+        max: 90,
+        default: 7,
+        help: "How many days apart a bank transaction and a book entry can be and still be treated as the same transaction.",
+      },
+      {
+        key: "showMatched",
+        label: "Show matched transactions sample",
+        type: "toggle",
+        default: true,
+      },
+    ],
+    reportSections: [
+      { title: "Reconciliation Summary", kind: "overview", description: "How many transactions matched, mismatched, or are missing on either side." },
+      { title: "Reconciliation Score", kind: "score", description: "Aggregate match quality score with a severity breakdown." },
+      { title: "Key Findings", kind: "findings", description: "Mismatches, unrecorded items, and duplicates found." },
+      { title: "Itemized Rows", kind: "details", description: "Transaction-level reconciliation rows for both sides." },
+      { title: "Recommended Actions", kind: "actions", description: "Entries to correct, record, or verify." },
+      { title: "Final Verdict", kind: "verdict", description: "Whether bank and books agree for this period." },
+    ],
+    icon: FileSpreadsheet,
+    accent: "emerald",
+    dualFile: true,
+    dualFileLabels: ["1. Bank statement export (XLSX/CSV/PDF)", "2. Books / ledger export (XLSX/CSV/PDF)"],
   },
   {
     slug: "bank-statement-analyzer",

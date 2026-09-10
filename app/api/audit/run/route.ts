@@ -18,12 +18,16 @@ function validatePayload(body: unknown): { ok: true; payload: AuditRunPayload } 
   const b = body as Record<string, unknown>;
   const toolSlug = typeof b.toolSlug === "string" ? b.toolSlug.trim() : "";
   if (!toolSlug) return { ok: false, error: "toolSlug is required" };
-  if (!getToolLogic(toolSlug)) {
+  if (!getToolLogic(toolSlug) && toolSlug !== "bank-reconciliation-auditor") {
     return { ok: false, error: `Unknown tool: ${toolSlug}` };
   }
   const file = b.file;
   if (file && (typeof file !== "object" || file === null)) {
     return { ok: false, error: "file must be an object" };
+  }
+  const secondFile = b.secondFile;
+  if (secondFile && (typeof secondFile !== "object" || secondFile === null)) {
+    return { ok: false, error: "secondFile must be an object" };
   }
   const url = typeof b.url === "string" ? b.url : undefined;
   const text = typeof b.text === "string" ? b.text : undefined;
@@ -47,6 +51,13 @@ function validatePayload(body: unknown): { ok: true; payload: AuditRunPayload } 
       return { ok: false, error: "file must include name, kind, and base64" };
     }
     payload.file = { name: f.name, kind: f.kind, base64: f.base64 };
+  }
+  if (secondFile !== undefined) {
+    const sf = secondFile as Record<string, unknown>;
+    if (typeof sf.name !== "string" || typeof sf.kind !== "string" || typeof sf.base64 !== "string") {
+      return { ok: false, error: "secondFile must include name, kind, and base64" };
+    }
+    payload.secondFile = { name: sf.name, kind: sf.kind, base64: sf.base64 };
   }
   return { ok: true, payload };
 }

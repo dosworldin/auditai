@@ -64,6 +64,13 @@ function toolNameFor(slug: string): string {
 }
 
 export async function runAudit(payload: AuditRunPayload): Promise<AuditReport> {
+  // The Bank Reconciliation Auditor has a bespoke two-file engine that bypasses
+  // the standard single-document pipeline (it needs both uploads at once).
+  if (payload.toolSlug === "bank-reconciliation-auditor") {
+    const { runReconciliationAudit } = await import("@/lib/engine/reconciliation");
+    return runReconciliationAudit(payload);
+  }
+
   const logic = getToolLogic(payload.toolSlug);
   if (!logic) {
     return {

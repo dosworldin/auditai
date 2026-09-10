@@ -96,6 +96,10 @@ export interface ToolDefinition {
   reportSections: ReportSection[];
   icon: LucideIcon;
   accent: string;
+  /** When true the tool requires TWO simultaneous file uploads (e.g. bank reconciliation). */
+  dualFile?: boolean;
+  /** Labels for the two uploads when dualFile is true. */
+  dualFileLabels?: [string, string];
 }
 
 export type LabStatus = "Experimental" | "Beta" | "Ready" | "Coming Soon";

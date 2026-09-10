@@ -57,11 +57,43 @@ export interface ReportConfidence {
   notes: string[];
 }
 
+export interface ReconciliationRow {
+  date: string;
+  description: string;
+  amount: number;
+  note: string;
+  matchedWith?: string;
+  diff?: number;
+}
+
+export interface ReconciliationSummary {
+  bankStatementName: string;
+  booksName: string;
+  bankRows: number;
+  bookRows: number;
+  matched: number;
+  amountMismatched: number;
+  missingInBooks: number;
+  missingInBank: number;
+  duplicates: number;
+  bankTotal: number;
+  booksTotal: number;
+  tolerance: number;
+  dateWindowDays: number;
+  matchRatePercent: number;
+  mismatchRows: ReconciliationRow[];
+  missingInBooksRows: ReconciliationRow[];
+  missingInBankRows: ReconciliationRow[];
+  matchedSample: ReconciliationRow[];
+}
+
 export interface AuditReport {
   toolSlug: string;
   toolName: string;
   status: "ok" | "error";
   error?: string;
+  /** Bank Reconciliation Auditor only: structured match results. */
+  reconciliation?: ReconciliationSummary;
   generatedAt: string;
   documentName: string;
   safetyDomain: SafetyDomain;
@@ -86,6 +118,8 @@ export interface AuditRunPayload {
   toolSlug: string;
   documentName?: string;
   file?: { name: string; kind: string; base64: string };
+  /** Bank Reconciliation Auditor: the second upload (books/ledger export). */
+  secondFile?: { name: string; kind: string; base64: string };
   url?: string;
   text?: string;
   config?: Record<string, string | number | boolean>;

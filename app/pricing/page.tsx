@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Check, CreditCard, Sparkles, Loader2 } from "lucide-react";
+import { TOOL_COUNT } from "@/lib/tools/registry";
 import { Container } from "@/components/layout/Container";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -86,7 +87,7 @@ export default function PricingPage() {
                   <ul className="mt-5 flex-1 space-y-2.5">
                     <li className="flex items-start gap-2 text-sm">
                       <Check className="mt-0.5 h-4 w-4 shrink-0 text-success" />
-                      <span className="text-foreground">All 40 audit tools</span>
+                      <span className="text-foreground">All {TOOL_COUNT} audit tools</span>
                     </li>
                     <li className="flex items-start gap-2 text-sm">
                       <Check className="mt-0.5 h-4 w-4 shrink-0 text-success" />
