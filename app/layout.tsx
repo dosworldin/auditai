@@ -6,14 +6,34 @@ import { AuthProvider } from "@/lib/auth/context";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { LiveActivityToasts } from "@/components/activity/LiveActivityToasts";
+import { SITE_URL, SITE_NAME, SITE_DESCRIPTION } from "@/lib/site";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: {
-    default: "AuditAI - Professional Document Audit Platform",
+    default: "AuditAI — 40+ AI Document Audit Tools, Labs & StoryVerse",
     template: "%s | AuditAI",
   },
-  description:
-    "AuditAI helps individuals and businesses understand documents - contracts, invoices, policies and more - with professional AI-powered audits.",
+  description: SITE_DESCRIPTION,
+  keywords: [
+    "document audit", "AI document analysis", "contract review", "invoice check",
+    "salary slip audit", "privacy policy analyzer", "GDPR compliance tool",
+    "AI tools", "StoryVerse", "collaborative writing",
+  ],
+  openGraph: {
+    type: "website",
+    siteName: SITE_NAME,
+    title: "AuditAI — 40+ AI Document Audit Tools, Labs & StoryVerse",
+    description: SITE_DESCRIPTION,
+    url: SITE_URL,
+    images: [{ url: "/api/og", width: 1200, height: 630, alt: "AuditAI" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "AuditAI — 40+ AI Document Audit Tools",
+    description: SITE_DESCRIPTION,
+    images: ["/api/og"],
+  },
 };
 
 export const viewport: Viewport = {
@@ -41,4 +61,5 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         </ThemeProvider>
       </body>
     </html>
-  );}
+  );
+}
