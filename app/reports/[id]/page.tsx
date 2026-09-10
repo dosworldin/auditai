@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Download, FileText, Printer, Share2, Loader2 } from "lucide-react";
+import { ArrowLeft, Download, FileText, Printer, Loader2 } from "lucide-react";
 import { Container } from "@/components/layout/Container";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
@@ -36,6 +36,44 @@ export default function ReportPage() {
   const [report, setReport] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [shareSlug, setShareSlug] = useState<string | null>(null);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
+
+  const toggleShare = async () => {
+    if (!report) return;
+    setShareBusy(true);
+    try {
+      const res = await fetch("/api/reports/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reportId: params.id, action: shareSlug ? "revoke" : "create" }),
+      });
+      const data = await res.json();
+      if (res.ok && data.shared) {
+        setShareSlug(data.slug);
+      } else if (res.ok) {
+        setShareSlug(null);
+      } else {
+        alert(data.error || "Share failed");
+      }
+    } finally {
+      setShareBusy(false);
+    }
+  };
+
+  const shareUrl = shareSlug && typeof window !== "undefined" ? `${window.location.origin}/share/${shareSlug}` : "";
+
+  const copyShareLink = async () => {
+    if (!shareUrl) return;
+    await navigator.clipboard.writeText(shareUrl);
+    setShareCopied(true);
+    setTimeout(() => setShareCopied(false), 2500);
+  };
+
+  const whatsappHref = shareUrl
+    ? `https://wa.me/?text=${encodeURIComponent(`I just audited a document with AuditAI — check this report: ${shareUrl}`)}`
+    : "";
 
   useEffect(() => {
     async function loadReport() {
@@ -55,7 +93,12 @@ export default function ReportPage() {
           .single();
 
         if (data) {
-          setReport(data as unknown as ReportData);
+          const row = data as unknown as ReportData & {
+            public_share_slug: string | null;
+            is_publicly_shared: boolean;
+          };
+          setReport(row);
+          setShareSlug(row.is_publicly_shared ? row.public_share_slug : null);
         } else {
           setNotFound(true);
         }
@@ -231,15 +274,40 @@ export default function ReportPage() {
               </Card>
 
               <Card>
+                <CardHeader
+                  title="Share this report"
+                  subtitle="Public link — anyone can view, nothing private is exposed"
+                />
+                <CardContent className="space-y-2">
+                  {shareSlug ? (
+                    <>
+                      <Button className="w-full" onClick={copyShareLink} disabled={shareBusy}>
+                        {shareCopied ? "Link copied!" : "Copy share link"}
+                      </Button>
+                      <a href={whatsappHref} target="_blank" rel="noopener noreferrer" className="block">
+                        <Button className="w-full" variant="outline">
+                          Share on WhatsApp
+                        </Button>
+                      </a>
+                      <Button className="w-full" variant="ghost" onClick={toggleShare} disabled={shareBusy}>
+                        Stop sharing (revoke link)
+                      </Button>
+                    </>
+                  ) : (
+                    <Button className="w-full" onClick={toggleShare} disabled={shareBusy}>
+                      Create public share link
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
                 <CardContent className="space-y-2">
                   <Button className="w-full" variant="outline">
                     <Download className="h-4 w-4" /> Export
                   </Button>
-                  <Button className="w-full" variant="outline">
+                  <Button className="w-full" variant="outline" onClick={() => window.print()}>
                     <Printer className="h-4 w-4" /> Print
-                  </Button>
-                  <Button className="w-full" variant="outline">
-                    <Share2 className="h-4 w-4" /> Share
                   </Button>
                 </CardContent>
               </Card>

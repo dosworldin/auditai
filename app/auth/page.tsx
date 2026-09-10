@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Field";
 import { useAuth } from "@/lib/auth/context";
+import { consumeStoredReferral } from "@/lib/growth/referral";
 
 function AuthForm() {
   const router = useRouter();
@@ -79,6 +80,19 @@ function AuthForm() {
         if (mode === "signin") {
           router.replace(returnTo);
         } else {
+          // Apply stored referral code (best-effort, never blocks signup)
+          const refCode = consumeStoredReferral();
+          if (refCode) {
+            try {
+              await fetch("/api/auth/referral", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ code: refCode }),
+              });
+            } catch {
+              // ignore — referral is best-effort
+            }
+          }
           setError("");
           setMode("signin");
           setEmail(email);

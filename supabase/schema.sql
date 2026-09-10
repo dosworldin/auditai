@@ -22,6 +22,8 @@ create table public.profiles (
   plan text not null default 'free' check (plan in ('free', 'starter', 'pro', 'business', 'enterprise')),
   is_suspended boolean not null default false,
   suspension_reason text,
+  referral_code text unique,
+  referred_by uuid references public.profiles(id),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -60,8 +62,12 @@ create policy "Admins can read all profiles"
 create or replace function public.handle_new_user()
 returns trigger as $$
 begin
-  insert into public.profiles (id, email, display_name)
-  values (new.id, new.email, coalesce(new.raw_user_meta_data->>'display_name', split_part(new.email, '@', 1)));
+  insert into public.profiles (id, email, display_name, referral_code)
+  values (
+    new.id, new.email,
+    coalesce(new.raw_user_meta_data->>'display_name', split_part(new.email, '@', 1)),
+    'R' || upper(substr(md5(random()::text || new.id::text), 1, 6))
+  );
   return new;
 end;
 $$ language plpgsql security definer;
@@ -131,7 +137,10 @@ insert into public.admin_settings (key, value, category, description) values
   ('storyverse_globe_min_gap_seconds', '5', 'storyverse', 'Globe: shortest random pause between flag pins'),
   ('storyverse_globe_max_gap_seconds', '15', 'storyverse', 'Globe: longest random pause between flag pins'),
   ('storyverse_globe_disappear_seconds', '7', 'storyverse', 'Globe: how long each pin stays visible before disappearing'),
-  ('storyverse_globe_initial_delay_seconds', '3.5', 'storyverse', 'Globe: delay before the first pin appears')
+  ('storyverse_globe_initial_delay_seconds', '3.5', 'storyverse', 'Globe: delay before the first pin appears'),
+  ('referral_enabled', 'true', 'growth', 'Enable referral program (signup bonuses for referrer + referee)'),
+  ('referral_bonus_credits', '50', 'growth', 'Credits granted to BOTH referrer and referred user on successful referral'),
+  ('share_reports_enabled', 'true', 'growth', 'Allow users to create public share links for their audit reports')
 on conflict (key) do nothing;
 
 -- ============================================================================
@@ -234,8 +243,12 @@ create table public.audit_reports (
   high_count integer default 0,
   medium_count integer default 0,
   low_count integer default 0,
+  public_share_slug text unique,
+  is_publicly_shared boolean not null default false,
   created_at timestamptz not null default now()
 );
+
+create index idx_audit_reports_share on public.audit_reports(public_share_slug) where is_publicly_shared = true;
 
 alter table public.audit_reports enable row level security;
 

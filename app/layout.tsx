@@ -6,6 +6,7 @@ import { AuthProvider } from "@/lib/auth/context";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { LiveActivityToasts } from "@/components/activity/LiveActivityToasts";
+import { ReferralCapture } from "@/components/growth/ReferralCapture";
 import { SITE_URL, SITE_NAME, SITE_DESCRIPTION } from "@/lib/site";
 
 export const metadata: Metadata = {
@@ -56,6 +57,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               <main className="flex-1">{children}</main>
               <Footer />
               <LiveActivityToasts />
+              <ReferralCapture />
             </div>
           </AuthProvider>
         </ThemeProvider>

@@ -10,6 +10,7 @@ import { NotFoundState } from "@/components/ui/Feedback";
 import { Button } from "@/components/ui/Button";
 import { ToolClient } from "@/components/tools/ToolClient";
 import { RequireAuth } from "@/components/auth/RequireAuth";
+import { ToolOpenGate } from "@/components/tools/ToolOpenGate";
 import { getTool } from "@/lib/tools/registry";
 
 export default function ToolPage() {
@@ -33,7 +34,7 @@ export default function ToolPage() {
   }
 
   return (
-    <RequireAuth>
+    <ToolOpenGate>
       <Container className="py-8">
         <PageHeader
           title={tool.name}
@@ -55,6 +56,6 @@ export default function ToolPage() {
 
         <ToolClient tool={tool} />
       </Container>
-    </RequireAuth>
+    </ToolOpenGate>
   );
 }
