@@ -5,6 +5,7 @@ import Link from "next/link";
 import { BookOpenText, Globe2, ScrollText, Scale } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { GLOBE_COUNTRIES, GLOBE_RULES } from "@/lib/storyverse-globe/data";
+import { landDots, projectToMap } from "@/lib/storyverse-globe/world-map";
 import { DEFAULT_GLOBE_TIMING, useStoryverseGlobe } from "@/lib/storyverse-globe/useStoryverseGlobe";
 
 interface GlobeConfigRow {
@@ -25,11 +26,12 @@ const FALLBACK_CONFIG: Required<Omit<GlobeConfigRow, "enabled">> & { enabled: bo
 
 /**
  * StoryVerse "world activity" globe.
- * Flags orbit the globe as community actions happen worldwide (deck-sampled,
- * no repeats), with the platform's StoryVerse rules/terms beside it.
- * Timing is fully admin-controlled via admin_settings:
- * storyverse_globe_enabled, storyverse_globe_min_gap_seconds,
- * storyverse_globe_max_gap_seconds, storyverse_globe_disappear_seconds.
+ *
+ * A real equirectangular world map (dot-matrix) sits inside the globe — pins
+ * are projected from each city's true longitude/latitude so Mumbai appears
+ * over India, São Paulo over Brazil, and so on. Only StoryVerse community
+ * events appear here; general audit-tool popups are never mixed in. Timing is
+ * admin-controlled via admin_settings (storyverse_globe_*).
  */
 export function StoryverseGlobe() {
   const [cfg, setCfg] = useState<Required<Omit<GlobeConfigRow, "enabled">> & { enabled: boolean }>(
@@ -64,6 +66,7 @@ export function StoryverseGlobe() {
   );
 
   const { events } = useStoryverseGlobe(loaded && cfg.enabled, loaded ? timing : DEFAULT_GLOBE_TIMING);
+  const dots = useMemo(() => landDots(), []);
 
   return (
     <section aria-label="StoryVerse global activity" className="mb-10 grid gap-6 lg:grid-cols-5">
@@ -87,46 +90,49 @@ export function StoryverseGlobe() {
             <Badge tone="info">live</Badge>
           </div>
 
-          <div className="relative mx-auto aspect-[16/9] w-full">
-            {/* Globe body */}
-            <div
-              aria-hidden="true"
-              className="absolute left-1/2 top-1/2 h-[78%] w-[78%] max-w-[520px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-primary/20"
-              style={{
-                background:
-                  "radial-gradient(circle at 35% 30%, rgba(var(--primary), 0.14), rgba(var(--card), 1) 70%)",
-              }}
-            />
-            {/* Latitude guides */}
-            <div aria-hidden="true" className="absolute inset-0">
-              {[18, 32, 46, 60, 74].map((top) => (
-                <div
-                  key={top}
-                  className="absolute left-1/2 h-px w-[62%] -translate-x-1/2 border-t border-dashed border-border/70"
-                  style={{ top: `${top}%` }}
-                />
-              ))}
-            </div>
-            {/* Event pins */}
-            {events.map((ev) => (
-              <div
-                key={ev.id}
-                className="absolute z-10 flex max-w-[92%] -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-full border border-border bg-card/95 py-1 pl-1 pr-2.5 shadow-md animate-fade-in"
-                style={{ left: `${ev.place.x}%`, top: `${ev.place.y}%` }}
+          <div className="relative mx-auto aspect-[2/1] w-full">
+            {/* World map dot matrix (equirectangular projection) */}
+            <div aria-hidden="true" className="absolute inset-0 overflow-hidden rounded-b-[2rem]">
+              <svg
+                viewBox="0 0 100 50"
+                preserveAspectRatio="xMidYMid slice"
+                className="h-full w-full"
               >
-                <span
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-secondary text-sm leading-none"
-                  role="img"
-                  aria-label={ev.place.country}
+                {dots.map((d, i) => (
+                  <circle
+                    key={i}
+                    cx={d.x}
+                    cy={d.y * 0.5}
+                    r={0.32}
+                    className="fill-primary/35 dark:fill-primary/45"
+                  />
+                ))}
+              </svg>
+            </div>
+
+            {/* Event pins — projected from real coordinates */}
+            {events.map((ev) => {
+              const pos = projectToMap(ev.place.lng, ev.place.lat);
+              return (
+                <div
+                  key={ev.id}
+                  className="absolute z-10 flex max-w-[92%] -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-full border border-border bg-card/95 py-1 pl-1 pr-2.5 shadow-md animate-fade-in"
+                  style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
                 >
-                  {ev.place.flag}
-                </span>
-                <span className="whitespace-nowrap text-xs font-medium text-foreground">
-                  <span className="font-semibold">{ev.place.city}</span>{" "}
-                  <span className="text-muted-foreground">{ev.action}</span>
-                </span>
-              </div>
-            ))}
+                  <span
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-secondary text-sm leading-none"
+                    role="img"
+                    aria-label={ev.place.country}
+                  >
+                    {ev.place.flag}
+                  </span>
+                  <span className="whitespace-nowrap text-xs font-medium text-foreground">
+                    <span className="font-semibold">{ev.place.city}</span>{" "}
+                    <span className="text-muted-foreground">{ev.action}</span>
+                  </span>
+                </div>
+              );
+            })}
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-5 py-2.5 text-xs text-muted-foreground">

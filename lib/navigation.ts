@@ -10,6 +10,7 @@ export const navSections: { id: NavSection; label: string; items: NavItem[] }[] 
         { label: "Audit Tools", href: "/tools", section: "tools" },
         { label: "Audit History", href: "/history", section: "platform" },
         { label: "Reports", href: "/reports", section: "platform" },
+        { label: "AI Storybooks", href: "/storybook", section: "platform" },
         { label: "Labs", href: "/labs", section: "labs" },
         { label: "Marketplace", href: "/marketplace", section: "platform" },
         { label: "Library", href: "/library", section: "platform" },

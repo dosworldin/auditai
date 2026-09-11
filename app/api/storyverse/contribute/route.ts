@@ -177,6 +177,74 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: "Round is not in voting status" }, { status: 400 });
   }
 
+  // Story-level voting rule (flexible, community feel):
+  //  - Anyone who has EVER contributed to this story can vote on its rounds
+  //    (free votes) — contributors shape the canon. Free votes are capped per
+  //    story (admin-adjustable, default 5) so every contributor gets the same
+  //    allowance.
+  //  - Once a contributor's free votes are used up, and for readers who never
+  //    contributed, PAID votes are the way to participate — they flow into the
+  //    story's author pool.
+  let freeVotesRemaining: number | null = null;
+  if (voteType !== "paid") {
+    const { data: everContributed } = await supabase
+      .from("storyverse_contributions")
+      .select("id")
+      .eq("story_id", storyId)
+      .eq("author_id", user.id)
+      .limit(1)
+      .maybeSingle();
+
+    const { data: isContributor } = await supabase
+      .from("storyverse_contributors")
+      .select("id")
+      .eq("story_id", storyId)
+      .eq("user_id", user.id)
+      .limit(1)
+      .maybeSingle();
+
+    if (!everContributed && !isContributor) {
+      return NextResponse.json(
+        {
+          error: "Voting on this story is for its contributors. Add a contribution in any round to unlock free votes — or use a paid vote to support the authors directly.",
+          requiresContribution: true,
+        },
+        { status: 403 },
+      );
+    }
+
+    // Free-vote cap per story (admin-adjustable via Admin → StoryVerse Economy).
+    const { data: limitSetting } = await supabase
+      .from("admin_settings")
+      .select("value")
+      .eq("key", "storyverse_free_vote_limit")
+      .single();
+
+    const limitValue = Number(limitSetting?.value);
+    const freeVoteLimit = Number.isFinite(limitValue) && limitValue >= 0 ? limitValue : 5;
+
+    const { count: freeVotesUsed } = await supabase
+      .from("storyverse_votes")
+      .select("id", { count: "exact", head: true })
+      .eq("story_id", storyId)
+      .eq("voter_id", user.id)
+      .eq("vote_type", "free");
+
+    const used = freeVotesUsed ?? 0;
+    freeVotesRemaining = Math.max(0, freeVoteLimit - used);
+
+    if (used >= freeVoteLimit) {
+      return NextResponse.json(
+        {
+          error: `Your ${freeVoteLimit} free contributor votes on this story are used up. You can keep supporting it with paid votes — they go straight to the author pool.`,
+          freeVotesExhausted: true,
+          freeVoteLimit,
+        },
+        { status: 403 },
+      );
+    }
+  }
+
   // Check if user already voted on this contribution
   const { data: existingVote } = await supabase
     .from("storyverse_votes")
@@ -190,10 +258,10 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: "You have already voted on this contribution" }, { status: 400 });
   }
 
-  // Check self-voting
+  // Check self-voting (contributors may not vote for their own snippet)
   const { data: contribution } = await supabase
     .from("storyverse_contributions")
-    .select("author_id")
+    .select("author_id, votes")
     .eq("id", contributionId)
     .single();
 
@@ -317,7 +385,7 @@ export async function PUT(request: Request) {
     await finalizeRound(supabase, roundId, storyId, round);
   }
 
-  return NextResponse.json({ ok: true, voteType, creditsCost });
+  return NextResponse.json({ ok: true, voteType, creditsCost, freeVotesRemaining });
 }
 
 /**

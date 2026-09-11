@@ -8,6 +8,7 @@ const nextConfig = {
       "tesseract.js",
       "cheerio",
       "xlsx",
+      "pdfkit",
     ],
   },
 };

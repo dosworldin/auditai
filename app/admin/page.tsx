@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { Activity, FlaskConical, LayoutGrid, ServerCog, ShieldCheck, Table2, Settings, Loader2, Wallet, CheckCircle2, XCircle, ExternalLink, Users, LifeBuoy, ListChecks, Banknote, Bot, ArrowUp, ArrowDown, Trash2, Plus } from "lucide-react";
+import { Activity, FlaskConical, LayoutGrid, ServerCog, ShieldCheck, Table2, Settings, Loader2, Wallet, CheckCircle2, XCircle, ExternalLink, Users, LifeBuoy, ListChecks, Banknote, Bot, ArrowUp, ArrowDown, Trash2, Plus, BookOpen } from "lucide-react";
 import { Container } from "@/components/layout/Container";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader } from "@/components/ui/Card";
@@ -76,6 +76,7 @@ const defaultSettings: SettingsData = {
     storyverse_vote_platform_percent: 70,
     storyverse_vote_author_percent: 30,
     storyverse_ai_editor_price: 10,
+    storyverse_free_vote_limit: 5,
     storyverse_pool_inactivity_hold_days: 7,
     storyverse_globe_enabled: true,
     storyverse_globe_min_gap_seconds: 5,
@@ -122,6 +123,27 @@ export default function AdminPage() {
   const [payouts, setPayouts] = useState<PayoutRow[]>([]);
   const [payoutsLoading, setPayoutsLoading] = useState(false);
   const [payoutAction, setPayoutAction] = useState<string | null>(null);
+
+  // Storybook tab state
+  interface StorybookOrderRow { id: string; user_id: string; status: string; child_name: string; theme: string; art_style: string; language: string; page_count: number; credits_spent: number; provider: string | null; error_message: string | null; share_slug: string | null; pdf_path: string | null; created_at: string; updated_at: string; email: string | null; display_name: string | null; }
+  const [sbOrders, setSbOrders] = useState<StorybookOrderRow[]>([]);
+  const [sbLoading, setSbLoading] = useState(false);
+
+  const loadStorybookOrders = useCallback(async () => {
+    setSbLoading(true);
+    try {
+      const res = await fetch("/api/admin/storybook");
+      if (res.ok) {
+        const data = await res.json();
+        setSbOrders(data.orders ?? []);
+      }
+    } catch { /* ignore */ }
+    finally { setSbLoading(false); }
+  }, []);
+
+  useEffect(() => {
+    if (tab === "storybook") loadStorybookOrders();
+  }, [tab, loadStorybookOrders]);
 
   const loadSettings = useCallback(async () => {
     try {
@@ -489,6 +511,7 @@ export default function AdminPage() {
               { id: "requests", label: "Requests", icon: <ListChecks className="h-4 w-4" /> },
               { id: "tools", label: "Tools", icon: <LayoutGrid className="h-4 w-4" /> },
               { id: "labs", label: "Labs", icon: <FlaskConical className="h-4 w-4" /> },
+              { id: "storybook", label: "Storybooks", icon: <BookOpen className="h-4 w-4" /> },
               { id: "processing", label: "Processing", icon: <ServerCog className="h-4 w-4" /> },
             ]}
           />
@@ -598,8 +621,11 @@ export default function AdminPage() {
                         <Input type="number" min={0} max={100} value={String(settings.storyverse?.storyverse_vote_author_percent ?? 30)} onChange={(e) => updateSetting("storyverse", "storyverse_vote_author_percent", Number(e.target.value))} onBlur={() => saveSetting("storyverse_vote_author_percent", settings.storyverse?.storyverse_vote_author_percent)} />
                       </Field>
                     </div>
+                    <Field label="Free Votes per Contributor" help="Every contributor to a story gets this many free votes on it (across all rounds). After the cap, votes must be paid. 0 disables free voting entirely.">
+                      <Input type="number" min={0} value={String(settings.storyverse?.storyverse_free_vote_limit ?? 5)} onChange={(e) => updateSetting("storyverse", "storyverse_free_vote_limit", Number(e.target.value))} onBlur={() => saveSetting("storyverse_free_vote_limit", settings.storyverse?.storyverse_free_vote_limit)} />
+                    </Field>
                     <p className="text-xs text-muted-foreground">
-                      Paid vote rule: when a reader spends {String(settings.storyverse?.storyverse_paid_vote_price ?? 1)} credit(s) on a paid vote, the amount is split — {String(settings.storyverse?.storyverse_vote_platform_percent ?? 70)}% platform, {String(settings.storyverse?.storyverse_vote_author_percent ?? 30)}% to the story's author pool.
+                      Vote rule: each contributor gets {String(settings.storyverse?.storyverse_free_vote_limit ?? 5)} free votes per story (admin-adjustable). Paid vote rule: when a reader spends {String(settings.storyverse?.storyverse_paid_vote_price ?? 1)} credit(s) on a paid vote, the amount is split — {String(settings.storyverse?.storyverse_vote_platform_percent ?? 70)}% platform, {String(settings.storyverse?.storyverse_vote_author_percent ?? 30)}% to the story's author pool.
                     </p>
                   </CardContent>
                 </Card>
@@ -1235,6 +1261,139 @@ export default function AdminPage() {
               )}
             </CardContent>
           </Card>
+        )}
+
+        {tab === "storybook" && (
+          <div className="space-y-6">
+            <Card>
+              <CardHeader
+                title="Storybooks product"
+                subtitle="Controls the AI Storybooks feature (per-child illustrated storybook PDFs)."
+              />
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between rounded-lg border border-border p-4">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Storybooks enabled</p>
+                    <p className="text-xs text-muted-foreground">When off, /storybook is hidden and the create API refuses new orders.</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {settings.storybook?.storybook_enabled ? <Badge tone="success">Live</Badge> : <Badge tone="destructive">Off</Badge>}
+                    <Toggle
+                      checked={settings.storybook?.storybook_enabled === true}
+                      onChange={(v) => saveSetting("storybook_enabled", v)}
+                    />
+                  </div>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {([
+                    ["storybook_pdf_credits", "Credits per book", "Full storybook: story + illustrations + PDF"],
+                    ["storybook_regenerate_page_credits", "Page regen credits", "Charge after the first free page regeneration"],
+                    ["storybook_default_page_count", "Default pages", "Preselected page count in the wizard"],
+                    ["storybook_min_page_count", "Min pages", "Lower bound allowed"],
+                    ["storybook_max_page_count", "Max pages", "Upper bound allowed"],
+                    ["storybook_photo_retention_days", "Photo retention (days)", "0 deletes the child photo immediately after generation"],
+                    ["storybook_voice_credits", "Voice narration credits", "Premium add-on: AI narration of the whole book (charged once per book)"],
+                    ["storybook_public_preview_pages", "Free preview pages", "Pages visible on public share links (default 3)"],
+                    ["storybook_analysis_credits", "Story analysis credits", "Paid AI story-fit analysis for private stories"],
+                    ["storybook_ai_story_credits", "AI writer credits", "Per run of the AI story-writer (text only)"],
+                    ["storybook_pod_credits", "Print order credits", "Platform charge for placing a print-on-demand order"],
+                    ["storybook_pod_markup_percent", "Print markup %", "Added on top of the printer cost in quotes"],
+                  ] as [string, string, string][]).map(([key, label, help]) => (
+                    <Field key={key} label={label} help={help}>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={String(settings.storybook?.[key] ?? "")}
+                        onChange={(e) => updateSetting("storybook", key, e.target.value === "" ? null : Number(e.target.value))}
+                        onBlur={() => saveSetting(key, settings.storybook?.[key])}
+                      />
+                    </Field>
+                  ))}
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Illustration provider" help="Direct providers only. “gemini” = Google Gemini image (nano banana) first with Leonardo fallback; “leonardo” flips the order.">
+                    <select
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                      value={String(settings.storybook?.storybook_image_provider ?? "gemini")}
+                      onChange={(e) => { updateSetting("storybook", "storybook_image_provider", e.target.value); saveSetting("storybook_image_provider", e.target.value); }}
+                    >
+                      <option value="gemini">Gemini image (direct) → Leonardo fallback</option>
+                      <option value="leonardo">Leonardo → Gemini fallback</option>
+                    </select>
+                  </Field>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {([
+                    ["storybook_voice_enabled", "Voice narration", "Premium AI narration add-on (Gemini TTS)"],
+                    ["storybook_samples_enabled", "Readymade samples", "Show pre-illustrated sample books (zero AI cost per view)"],
+                    ["storybook_pod_enabled", "Printed copies (POD)", "Print-on-demand fulfillment via Lulu Direct"],
+                  ] as [string, string, string][]).map(([key, label, help]) => (
+                    <div key={key} className="flex items-center justify-between rounded-lg border border-border p-4">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">{label}</p>
+                        <p className="text-xs text-muted-foreground">{help}</p>
+                      </div>
+                      <Toggle
+                        checked={settings.storybook?.[key] === true}
+                        onChange={(v) => saveSetting(key, v)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader
+                title="Storybook orders"
+                subtitle="Latest 200 orders across all users."
+                actions={
+                  <Button variant="outline" size="sm" onClick={loadStorybookOrders} disabled={sbLoading}>
+                    {sbLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Refresh
+                  </Button>
+                }
+              />
+              <CardContent>
+                <Table head={<><Th>Child</Th><Th>User</Th><Th>Config</Th><Th>Status</Th><Th>Credits</Th><Th>Shared</Th><Th>Created</Th></>}>
+                  {sbOrders.map((o) => (
+                    <tr key={o.id}>
+                      <Td className="font-medium text-foreground">{o.child_name}</Td>
+                      <Td className="text-muted-foreground">
+                        <p className="text-sm">{o.display_name || o.email}</p>
+                        <p className="text-xs">{o.email}</p>
+                      </Td>
+                      <Td className="text-xs text-muted-foreground">
+                        {o.page_count} pages · {o.theme} · {o.art_style} · {o.language.toUpperCase()}
+                      </Td>
+                      <Td>
+                        <Badge
+                          tone={
+                            o.status === "ready" ? "success"
+                            : o.status === "failed" ? "destructive"
+                            : o.status === "draft" ? "warning"
+                            : "info"
+                          }
+                        >
+                          {o.status}
+                        </Badge>
+                        {o.error_message ? (
+                          <p className="mt-1 max-w-56 truncate text-xs text-destructive" title={o.error_message}>{o.error_message}</p>
+                        ) : null}
+                      </Td>
+                      <Td className="text-muted-foreground">{o.credits_spent}</Td>
+                      <Td>{o.share_slug ? <Badge tone="info">public</Badge> : <span className="text-xs text-muted-foreground">private</span>}</Td>
+                      <Td className="text-xs text-muted-foreground">{new Date(o.created_at).toLocaleDateString()}</Td>
+                    </tr>
+                  ))}
+                </Table>
+                {!sbLoading && sbOrders.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-muted-foreground">No storybook orders yet.</p>
+                ) : null}
+              </CardContent>
+            </Card>
+          </div>
         )}
 
         {tab === "processing" && (

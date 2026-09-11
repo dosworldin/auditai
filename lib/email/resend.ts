@@ -163,6 +163,24 @@ export async function sendPayoutStatusEmail(options: {
   });
 }
 
+export async function sendStorybookReadyEmail(options: {
+  to: string;
+  childName: string;
+  storyTitle: string;
+}): Promise<SendEmailResult> {
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "";
+  const body = `
+    <p style="margin:0 0 12px;">The personalized storybook for
+      <strong>${escapeHtml(options.childName)}</strong> is ready! 🎉</p>
+    <p style="margin:0 0 12px;"><strong>${escapeHtml(options.storyTitle)}</strong></p>
+    <p style="margin:0;"><a href="${siteUrl}/storybook" style="color:#2563eb;">Open your storybook →</a></p>`;
+  return sendEmail({
+    to: options.to,
+    subject: `Your storybook "${options.storyTitle}" is ready 🎉`,
+    html: wrapTemplate("Your storybook is ready", body),
+  });
+}
+
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")

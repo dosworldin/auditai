@@ -29,8 +29,7 @@ export const DEFAULT_GLOBE_TIMING: GlobeTiming = {
 /**
  * Deck-based no-repeat sampler — same approach as lib/activity/useActivityEvents.
  * Pools are shuffled; cards are popped so nothing repeats until a deck is
- * exhausted, then it reshuffles (Fisher–Yates). Combined draws make full-sentence
- * repeats astronomically unlikely.
+ * exhausted, then it reshuffles (Fisher–Yates).
  */
 class Deck<T> {
   private source: T[];

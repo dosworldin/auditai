@@ -1,61 +1,68 @@
 /**
  * StoryVerse globe — data pools.
  *
- * City/country pools mirror lib/activity/data.ts so the globe and the bottom-left
- * activity toasts never contradict each other.
+ * Each entry carries real coordinates so pins land on the actual world map
+ * rendered behind them (equirectangular projection in world-map.ts).
+ * These places mirror lib/activity/data.ts so the globe and any ambient
+ * social proof never contradict each other.
  */
 
-/** A place shown on the globe (country + flag + city + rough map position %). */
+/** A place shown on the globe (country + flag + city + real coordinates). */
 export interface GlobeEntry {
   country: string;
   flag: string;
   city: string;
-  /** Rough horizontal position on the globe (0–100%). */
-  x: number;
-  /** Rough vertical position on the globe (0–100%). */
-  y: number;
+  /** Real longitude (-180..180). */
+  lng: number;
+  /** Real latitude (-90..90). */
+  lat: number;
 }
 
 export const GLOBE_COUNTRIES: GlobeEntry[] = [
-  { country: "Brazil", flag: "🇧🇷", city: "São Paulo", x: 32, y: 58 },
-  { country: "USA", flag: "🇺🇸", city: "Austin", x: 20, y: 38 },
-  { country: "India", flag: "🇮🇳", city: "Mumbai", x: 68, y: 45 },
-  { country: "USA", flag: "🇺🇸", city: "Seattle", x: 15, y: 30 },
-  { country: "Germany", flag: "🇩🇪", city: "Berlin", x: 50, y: 32 },
-  { country: "Japan", flag: "🇯🇵", city: "Osaka", x: 84, y: 42 },
-  { country: "UK", flag: "🇬🇧", city: "Manchester", x: 47, y: 28 },
-  { country: "Canada", flag: "🇨🇦", city: "Toronto", x: 22, y: 30 },
-  { country: "Australia", flag: "🇦🇺", city: "Sydney", x: 86, y: 72 },
-  { country: "France", flag: "🇫🇷", city: "Lyon", x: 49, y: 34 },
-  { country: "Singapore", flag: "🇸🇬", city: "Singapore", x: 76, y: 58 },
-  { country: "UAE", flag: "🇦🇪", city: "Dubai", x: 62, y: 46 },
-  { country: "Netherlands", flag: "🇳🇱", city: "Amsterdam", x: 49, y: 30 },
-  { country: "Spain", flag: "🇪🇸", city: "Valencia", x: 46, y: 38 },
-  { country: "South Africa", flag: "🇿🇦", city: "Cape Town", x: 54, y: 72 },
-  { country: "Mexico", flag: "🇲🇽", city: "Guadalajara", x: 17, y: 44 },
-  { country: "South Korea", flag: "🇰🇷", city: "Busan", x: 82, y: 40 },
-  { country: "Sweden", flag: "🇸🇪", city: "Malmö", x: 52, y: 25 },
-  { country: "Italy", flag: "🇮🇹", city: "Turin", x: 50, y: 36 },
-  { country: "Kenya", flag: "🇰🇪", city: "Nairobi", x: 57, y: 58 },
-  { country: "Indonesia", flag: "🇮🇩", city: "Bandung", x: 78, y: 65 },
-  { country: "Poland", flag: "🇵🇱", city: "Kraków", x: 52, y: 30 },
-  { country: "Argentina", flag: "🇦🇷", city: "Córdoba", x: 29, y: 74 },
-  { country: "Turkey", flag: "🇹🇷", city: "Izmir", x: 55, y: 38 },
-  { country: "Vietnam", flag: "🇻🇳", city: "Da Nang", x: 76, y: 55 },
-  { country: "Norway", flag: "🇳🇴", city: "Bergen", x: 51, y: 22 },
-  { country: "Ireland", flag: "🇮🇪", city: "Galway", x: 45, y: 28 },
-  { country: "New Zealand", flag: "🇳🇿", city: "Wellington", x: 92, y: 78 },
-  { country: "Portugal", flag: "🇵🇹", city: "Porto", x: 44, y: 38 },
-  { country: "Philippines", flag: "🇵🇭", city: "Cebu", x: 80, y: 58 },
-  { country: "Egypt", flag: "🇪🇬", city: "Alexandria", x: 56, y: 44 },
-  { country: "Chile", flag: "🇨🇱", city: "Valparaíso", x: 28, y: 72 },
-  { country: "Malaysia", flag: "🇲🇾", city: "Penang", x: 75, y: 57 },
-  { country: "Switzerland", flag: "🇨🇭", city: "Zurich", x: 49, y: 33 },
-  { country: "Denmark", flag: "🇩🇰", city: "Aarhus", x: 51, y: 28 },
-  { country: "Morocco", flag: "🇲🇦", city: "Casablanca", x: 44, y: 42 },
+  { country: "Brazil", flag: "🇧🇷", city: "São Paulo", lng: -46.63, lat: -23.55 },
+  { country: "USA", flag: "🇺🇸", city: "Austin", lng: -97.74, lat: 30.27 },
+  { country: "India", flag: "🇮🇳", city: "Mumbai", lng: 72.88, lat: 19.08 },
+  { country: "USA", flag: "🇺🇸", city: "Seattle", lng: -122.33, lat: 47.61 },
+  { country: "Germany", flag: "🇩🇪", city: "Berlin", lng: 13.4, lat: 52.52 },
+  { country: "Japan", flag: "🇯🇵", city: "Osaka", lng: 135.5, lat: 34.69 },
+  { country: "UK", flag: "🇬🇧", city: "Manchester", lng: -2.24, lat: 53.48 },
+  { country: "Canada", flag: "🇨🇦", city: "Toronto", lng: -79.38, lat: 43.65 },
+  { country: "Australia", flag: "🇦🇺", city: "Sydney", lng: 151.21, lat: -33.87 },
+  { country: "France", flag: "🇫🇷", city: "Lyon", lng: 4.84, lat: 45.76 },
+  { country: "Singapore", flag: "🇸🇬", city: "Singapore", lng: 103.82, lat: 1.35 },
+  { country: "UAE", flag: "🇦🇪", city: "Dubai", lng: 55.27, lat: 25.2 },
+  { country: "Netherlands", flag: "🇳🇱", city: "Amsterdam", lng: 4.9, lat: 52.37 },
+  { country: "Spain", flag: "🇪🇸", city: "Valencia", lng: -0.38, lat: 39.47 },
+  { country: "South Africa", flag: "🇿🇦", city: "Cape Town", lng: 18.42, lat: -33.92 },
+  { country: "Mexico", flag: "🇲🇽", city: "Guadalajara", lng: -103.35, lat: 20.66 },
+  { country: "South Korea", flag: "🇰🇷", city: "Busan", lng: 129.08, lat: 35.18 },
+  { country: "Sweden", flag: "🇸🇪", city: "Malmö", lng: 13.0, lat: 55.6 },
+  { country: "Italy", flag: "🇮🇹", city: "Turin", lng: 7.69, lat: 45.07 },
+  { country: "Kenya", flag: "🇰🇪", city: "Nairobi", lng: 36.82, lat: -1.29 },
+  { country: "Indonesia", flag: "🇮🇩", city: "Bandung", lng: 107.61, lat: -6.92 },
+  { country: "Poland", flag: "🇵🇱", city: "Kraków", lng: 19.94, lat: 50.06 },
+  { country: "Argentina", flag: "🇦🇷", city: "Córdoba", lng: -64.18, lat: -31.42 },
+  { country: "Turkey", flag: "🇹🇷", city: "Izmir", lng: 27.14, lat: 38.42 },
+  { country: "Vietnam", flag: "🇻🇳", city: "Da Nang", lng: 108.22, lat: 16.05 },
+  { country: "Norway", flag: "🇳🇴", city: "Bergen", lng: 5.32, lat: 60.39 },
+  { country: "Ireland", flag: "🇮🇪", city: "Galway", lng: -9.05, lat: 53.27 },
+  { country: "New Zealand", flag: "🇳🇿", city: "Wellington", lng: 174.78, lat: -41.29 },
+  { country: "Portugal", flag: "🇵🇹", city: "Porto", lng: -8.61, lat: 41.15 },
+  { country: "Philippines", flag: "🇵🇭", city: "Cebu", lng: 123.89, lat: 10.32 },
+  { country: "Egypt", flag: "🇪🇬", city: "Alexandria", lng: 29.92, lat: 31.2 },
+  { country: "Chile", flag: "🇨🇱", city: "Valparaíso", lng: -71.63, lat: -33.05 },
+  { country: "Malaysia", flag: "🇲🇾", city: "Penang", lng: 100.33, lat: 5.41 },
+  { country: "Switzerland", flag: "🇨🇭", city: "Zurich", lng: 8.54, lat: 47.38 },
+  { country: "Denmark", flag: "🇩🇰", city: "Aarhus", lng: 10.2, lat: 56.16 },
+  { country: "Morocco", flag: "🇲🇦", city: "Casablanca", lng: -7.59, lat: 33.57 },
+  { country: "Colombia", flag: "🇨🇴", city: "Medellín", lng: -75.56, lat: 6.25 },
+  { country: "Nigeria", flag: "🇳🇬", city: "Lagos", lng: 3.38, lat: 6.52 },
+  { country: "Thailand", flag: "🇹🇭", city: "Chiang Mai", lng: 98.98, lat: 18.79 },
+  { country: "Greece", flag: "🇬🇷", city: "Thessaloniki", lng: 22.94, lat: 40.64 },
 ];
 
-/** StoryVerse-specific actions shown on the globe. */
+/** StoryVerse-specific actions shown on the globe (community-verified: only
+ * StoryVerse events appear here — the general audit-tool popups never mix in). */
 export const GLOBE_ACTIONS = [
   "cast a canon vote",
   "started a canon vote",
@@ -74,6 +81,7 @@ export const GLOBE_ACTIONS = [
  */
 export const GLOBE_RULES: { label: string; text: string }[] = [
   { label: "Canon wins", text: "Winners of community votes become official canon." },
+  { label: "Who can vote", text: "Anyone who has ever contributed to a story can vote on its rounds — contributors shape canon (free votes are limited per round)." },
   { label: "Paid votes", text: "A paid vote splits 70% platform / 30% to the story's author pool (admin-configurable)." },
   { label: "Book sales", text: "Marketplace sales split 30% platform / 70% author pool (admin-configurable)." },
   { label: "AI Editor", text: "The round winner's contribution is reviewed for continuity + copyright (admin-set credit cost)." },

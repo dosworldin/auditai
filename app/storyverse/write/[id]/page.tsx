@@ -60,6 +60,7 @@ export default function WritePage() {
   const [error, setError] = useState("");
   const [votingId, setVotingId] = useState<string | null>(null);
   const [votedIds, setVotedIds] = useState<Set<string>>(new Set());
+  const [voteNotice, setVoteNotice] = useState<string | null>(null);
   const [showAgreement, setShowAgreement] = useState(false);
   const [agreementText, setAgreementText] = useState("");
   const [agreementLoading, setAgreementLoading] = useState(false);
@@ -179,10 +180,24 @@ export default function WritePage() {
 
       if (res.ok) {
         setVotedIds(new Set([...votedIds, contributionId]));
+        setVoteNotice(null);
         loadStory();
+      } else {
+        const data = await res.json().catch(() => null);
+        if (data?.requiresContribution) {
+          setVoteNotice(
+            "Voting on this story is for its contributors — add a snippet in any round to unlock free votes, or use a paid vote from the story page to support the authors.",
+          );
+        } else if (data?.freeVotesExhausted) {
+          setVoteNotice(
+            `You've used all ${data.freeVoteLimit ?? 5} of your free contributor votes on this story. You can keep supporting it with paid votes from the story page — they go straight to the author pool.`,
+          );
+        } else {
+          setVoteNotice(data?.error ?? "Vote failed.");
+        }
       }
     } catch {
-      // Failed
+      setVoteNotice("Vote failed — please try again.");
     } finally {
       setVotingId(null);
     }
@@ -298,6 +313,14 @@ export default function WritePage() {
                   actions={<Badge tone="info">{contributions.length} to vote</Badge>}
                 />
                 <CardContent className="space-y-4">
+                  {voteNotice ? (
+                    <div className="rounded-lg border border-info/30 bg-info/5 p-3 text-xs leading-relaxed text-muted-foreground">
+                      {voteNotice}
+                    </div>
+                  ) : null}
+                  <p className="text-xs text-muted-foreground">
+                    Vote rule: contributors get 5 free votes per story (admin-adjustable); once they're used up, paid votes support the authors. Readers who never contributed can also vote with paid votes.
+                  </p>
                   {contributions.map((c) => (
                     <div key={c.id} className="rounded-xl border border-border bg-background p-4">
                       <div className="flex items-start gap-3">

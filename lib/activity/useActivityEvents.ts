@@ -9,6 +9,8 @@ import {
   type ActivityEntry,
 } from "@/lib/activity/data";
 
+export type ActivityAudience = "guest" | "admin";
+
 export interface ActivityEvent {
   id: number;
   /** "Ananya from Mumbai, India" */
@@ -55,7 +57,18 @@ const MIN_GAP_MS = 5_000;
 const MAX_GAP_MS = 15_000;
 const SHOW_MS = 6_000;
 
-export function useActivityEvents(enabled: boolean = true) {
+/**
+ * Ambience activity events.
+ *
+ * audience = "guest" → social proof popups (tools/labs) for signed-out
+ * visitors. Signed-in users never see these (it reads as noise to someone
+ * already using the product); admins instead get ops/system events via the
+ * admin feed in LiveActivityToasts.
+ */
+export function useActivityEvents(
+  enabled: boolean = true,
+  audience: ActivityAudience = "guest",
+) {
   const [event, setEvent] = useState<ActivityEvent | null>(null);
   const [visible, setVisible] = useState(false);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -107,6 +120,8 @@ export function useActivityEvents(enabled: boolean = true) {
   useEffect(() => {
     mountedRef.current = true;
     if (!enabled) return;
+    if (audience !== "guest") return; // logged-in users: handled by admin/system feed
+
     // First popup arrives quickly so visitors see it, then 5–15s random gaps.
     scheduleNext(4_000);
     return () => {
@@ -114,7 +129,69 @@ export function useActivityEvents(enabled: boolean = true) {
       timers.current.forEach(clearTimeout);
       timers.current = [];
     };
-  }, [enabled, scheduleNext]);
+  }, [enabled, audience, scheduleNext]);
+
+  return { event, visible };
+}
+
+/* ------------------------------------------------------------------ */
+/* Admin ops feed — lightweight system heartbeat popups               */
+/* ------------------------------------------------------------------ */
+
+export interface AdminOpsEvent {
+  id: number;
+  title: string;
+  detail: string;
+}
+
+const OPS_CHECKS: { title: string; detail: string }[] = [
+  { title: "AI provider chain healthy", detail: "Primary + fallback responding within budget" },
+  { title: "Storybook pipeline idle", detail: "No stuck orders — all under time budget" },
+  { title: "Credit ledger in sync", detail: "Balances match ledger totals (last sweep)" },
+  { title: "Storage bucket reachable", detail: "storybook-assets signed URLs issuing correctly" },
+  { title: "Email delivery nominal", detail: "Transactional queue empty, no bounces" },
+  { title: "Rate limiter warm", detail: "Abuse guards active on AI-heavy routes" },
+  { title: "POD gateway reachable", detail: "Print API auth refreshed successfully" },
+  { title: "Voice narration ready", detail: "TTS quota OK — narration jobs finishing" },
+];
+
+/** System heartbeat events for ADMIN sessions only (ops reassurance). */
+export function useAdminOpsEvents(enabled: boolean) {
+  const [event, setEvent] = useState<AdminOpsEvent | null>(null);
+  const [visible, setVisible] = useState(false);
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const idRef = useRef(0);
+  const deck = useRef<Deck<{ title: string; detail: string }> | null>(null);
+  if (deck.current === null) deck.current = new Deck(OPS_CHECKS);
+
+  useEffect(() => {
+    if (!enabled) return;
+    let alive = true;
+
+    const schedule = (delayMs: number) => {
+      const t = setTimeout(() => {
+        if (!alive) return;
+        const check = deck.current!.next();
+        idRef.current += 1;
+        setEvent({ id: idRef.current, ...check });
+        setVisible(true);
+        const hide = setTimeout(() => {
+          if (!alive) return;
+          setVisible(false);
+          schedule(25_000 + Math.random() * 35_000);
+        }, 5_000);
+        timers.current.push(hide);
+      }, delayMs);
+      timers.current.push(t);
+    };
+
+    schedule(6_000);
+    return () => {
+      alive = false;
+      timers.current.forEach(clearTimeout);
+      timers.current = [];
+    };
+  }, [enabled]);
 
   return { event, visible };
 }

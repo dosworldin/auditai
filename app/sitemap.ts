@@ -15,6 +15,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${SITE_URL}/tools`, changeFrequency: "weekly" as const, priority: 0.9 },
     { url: `${SITE_URL}/labs`, changeFrequency: "weekly" as const, priority: 0.8 },
     { url: `${SITE_URL}/pricing`, changeFrequency: "monthly" as const, priority: 0.8 },
+    { url: `${SITE_URL}/storybook`, changeFrequency: "daily" as const, priority: 0.8 },
     { url: `${SITE_URL}/storyverse`, changeFrequency: "daily" as const, priority: 0.8 },
     { url: `${SITE_URL}/storyverse/marketplace`, changeFrequency: "daily" as const, priority: 0.7 },
     { url: `${SITE_URL}/marketplace`, changeFrequency: "daily" as const, priority: 0.6 },
