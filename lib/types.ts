@@ -134,6 +134,7 @@ export type NavSection =
   | "tools"
   | "labs"
   | "storyverse"
+  | "storybook"
   | "account";
 
 export interface NavItem {

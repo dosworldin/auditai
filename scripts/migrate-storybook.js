@@ -36,7 +36,7 @@ async function main() {
     await client.query(SQL);
     console.log("✅ storybook migration applied (tables, bucket, settings)");
     const { rows } = await client.query(
-      "select key from public.admin_settings where key like 'storybook_%' order by key",
+      "select key from public.admin_settings where key like 'storybook_%' or key like 'storyverse_%' order by key",
     );
     console.log("Settings:", rows.map((r) => r.key).join(", "));
   } finally {

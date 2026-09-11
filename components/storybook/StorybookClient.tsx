@@ -908,11 +908,17 @@ export default function StorybookClient({ defaultPageCount, minPageCount, maxPag
           <OrderTracker orderId={activeOrder} />
         ) : null}
 
-        <SampleStoriesSection />
-        <CreateWizard onCreated={onCreated} credits={credits} />
-        <AiStoryTools />
+        <div id="samples" className="scroll-mt-20">
+          <SampleStoriesSection />
+        </div>
+        <div id="create" className="scroll-mt-20">
+          <CreateWizard onCreated={onCreated} credits={credits} />
+        </div>
+        <div id="ai-tools" className="scroll-mt-20">
+          <AiStoryTools />
+        </div>
 
-        <div>
+        <div id="my-books" className="scroll-mt-20">
           <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-foreground">
             <Sparkles className="h-5 w-5 text-primary" /> Your storybooks
           </h2>

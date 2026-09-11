@@ -63,18 +63,6 @@ create table if not exists public.storybook_ai_stories (
 create index if not exists storybook_ai_stories_user_idx
   on public.storybook_ai_stories (user_id, created_at desc);
 alter table public.storybook_ai_stories enable row level security;
-create policy "Users manage own AI stories"
-  on public.storybook_ai_stories for all
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
-create policy "Admins read all AI stories"
-  on public.storybook_ai_stories for select
-  using (
-    exists (
-      select 1 from public.profiles
-      where id = auth.uid() and role = 'admin'
-    )
-  );
 
 -- Paid story-fit analyses
 create table if not exists public.storybook_analyses (
@@ -88,6 +76,31 @@ create table if not exists public.storybook_analyses (
 create index if not exists storybook_analyses_user_idx
   on public.storybook_analyses (user_id, created_at desc);
 alter table public.storybook_analyses enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- RLS policies. drop policy if exists ... create keeps this script re-runnable
+-- (create policy alone fails with 42710 when a previous run already applied it).
+-- ---------------------------------------------------------------------------
+drop policy if exists "Users manage own AI stories" on public.storybook_ai_stories;
+drop policy if exists "Admins read all AI stories" on public.storybook_ai_stories;
+drop policy if exists "Users manage own analyses" on public.storybook_analyses;
+drop policy if exists "Admins read all analyses" on public.storybook_analyses;
+drop policy if exists "Users manage own storybook orders" on public.storybook_orders;
+drop policy if exists "Admins read all storybook orders" on public.storybook_orders;
+
+create policy "Users manage own AI stories"
+  on public.storybook_ai_stories for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+create policy "Admins read all AI stories"
+  on public.storybook_ai_stories for select
+  using (
+    exists (
+      select 1 from public.profiles
+      where id = auth.uid() and role = 'admin'
+    )
+  );
+
 create policy "Users manage own analyses"
   on public.storybook_analyses for all
   using (auth.uid() = user_id)
@@ -125,6 +138,7 @@ on conflict (id) do nothing;
 
 -- Admin/runtime settings
 insert into public.admin_settings (key, value, category, description) values
+  ('storyverse_free_vote_limit', '5', 'storyverse', 'Free votes each contributor gets per story (paid votes after the cap)'),
   ('storybook_enabled', 'true', 'storybook', 'Enable the AI Storybooks product'),
   ('storybook_pdf_credits', '25', 'storybook', 'Credits for a full storybook (story + illustrations + PDF)'),
   ('storybook_regenerate_page_credits', '2', 'storybook', 'Credits to regenerate a single illustration after the first free retry'),
