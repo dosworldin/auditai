@@ -110,7 +110,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { display_name: displayName } },
+      options: {
+        data: { display_name: displayName },
+        // Supabase uses this as the verification-link base. window.location.origin
+        // is correct in every environment (Vercel, Render, local) — the URL only
+        // breaks when the user opens the site on localhost, in which case the
+        // Site URL configured in the Supabase Dashboard is used instead.
+        emailRedirectTo: `${window.location.origin}/auth`,
+      },
     });
     if (error) return { error: error.message };
     return {};

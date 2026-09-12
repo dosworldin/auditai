@@ -101,6 +101,7 @@ export default function AdminPage() {
     id: string; email: string; display_name: string; role: string;
     credits: number; plan: string; country: string | null;
     is_suspended: boolean; suspension_reason: string | null; created_at: string;
+    email_confirmed: boolean;
   }
   const [users, setUsers] = useState<AdminUserRow[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
@@ -333,8 +334,15 @@ export default function AdminPage() {
       if (res.ok) {
         const data = await res.json();
         setUsers(data.users ?? []);
+      } else {
+        const data = await res.json().catch(() => null);
+        setSaveMessage(data?.error || `Failed to load users (${res.status})`);
+        setTimeout(() => setSaveMessage(""), 4000);
       }
-    } catch { /* ignore */ }
+    } catch {
+      setSaveMessage("Failed to load users");
+      setTimeout(() => setSaveMessage(""), 4000);
+    }
     finally { setUsersLoading(false); }
   }, []);
 
@@ -361,6 +369,23 @@ export default function AdminPage() {
       }
     } catch {
       setSaveMessage("Update failed");
+      setTimeout(() => setSaveMessage(""), 4000);
+    } finally { setUserAction(null); }
+  };
+
+  const resendVerification = async (userId: string) => {
+    setUserAction(userId);
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: userId, action: "resend_verification" }),
+      });
+      const data = await res.json().catch(() => null);
+      setSaveMessage(res.ok ? `Verification email sent to ${data?.sentTo ?? "user"}` : data?.error || "Failed to send");
+      setTimeout(() => setSaveMessage(""), 4000);
+    } catch {
+      setSaveMessage("Failed to send verification email");
       setTimeout(() => setSaveMessage(""), 4000);
     } finally { setUserAction(null); }
   };
@@ -1095,12 +1120,24 @@ export default function AdminPage() {
                     <Td className="text-sm font-medium text-foreground">{Number(u.credits).toFixed(2)}</Td>
                     <Td className="text-sm text-muted-foreground capitalize">{u.plan}</Td>
                     <Td>
-                      <Badge tone={u.is_suspended ? "destructive" : "success"}>
-                        {u.is_suspended ? "Suspended" : "Active"}
-                      </Badge>
+                      <div className="space-y-1">
+                        <Badge tone={u.is_suspended ? "destructive" : "success"}>
+                          {u.is_suspended ? "Suspended" : "Active"}
+                        </Badge>
+                        {!u.email_confirmed ? (
+                          <div>
+                            <Badge tone="warning">Unverified</Badge>
+                          </div>
+                        ) : null}
+                      </div>
                     </Td>
                     <Td className="text-right">
                       <span className="inline-flex justify-end gap-2">
+                        {!u.email_confirmed ? (
+                          <Button size="sm" variant="outline" disabled={userAction === u.id} onClick={() => resendVerification(u.id)}>
+                            {userAction === u.id ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Resend verify
+                          </Button>
+                        ) : null}
                         <Button size="sm" variant="outline" disabled={userAction === u.id} onClick={() => adjustCredits(u.id)}>
                           Credits
                         </Button>

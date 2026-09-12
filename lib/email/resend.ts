@@ -87,6 +87,32 @@ function wrapTemplate(title: string, bodyHtml: string): string {
 </html>`;
 }
 
+/**
+ * Verification (confirm-signup) email sent when an admin re-sends the
+ * confirmation link for a user whose original email never arrived.
+ */
+export async function sendVerificationEmail(options: {
+  to: string;
+  displayName: string;
+  verifyUrl: string;
+}): Promise<SendEmailResult> {
+  const body = `
+    <p style="margin:0 0 12px;">Hi <strong>${escapeHtml(options.displayName)}</strong>,</p>
+    <p style="margin:0 0 12px;">Please confirm your email address to activate your AuditAI account.</p>
+    <p style="margin:0 0 16px;">
+      <a href="${options.verifyUrl}" style="display:inline-block;background:#2563eb;color:#ffffff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600;">
+        Verify my email →
+      </a>
+    </p>
+    <p style="margin:0;font-size:13px;color:#6b7280;">Or paste this link into your browser:<br />
+      <span style="word-break:break-all;">${options.verifyUrl}</span></p>`;
+  return sendEmail({
+    to: options.to,
+    subject: "Verify your email — AuditAI",
+    html: wrapTemplate("Confirm your email address", body),
+  });
+}
+
 export async function sendAdminNotificationEmail(options: {
   adminEmail: string;
   subject: string;
