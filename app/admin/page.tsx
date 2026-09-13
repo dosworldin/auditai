@@ -13,6 +13,7 @@ import { ToolIcon } from "@/components/ui/ToolIcon";
 import { Button } from "@/components/ui/Button";
 import { Input, Field } from "@/components/ui/Field";
 import { RequireAdmin } from "@/components/auth/RequireAuth";
+import { useAuth } from "@/lib/auth/context";
 import { TOOL_REGISTRY } from "@/lib/tools/registry";
 import { LAB_REGISTRY } from "@/lib/labs/registry";
 import { PROCESSING_DECISIONS } from "@/lib/processing/blueprint";
@@ -87,6 +88,12 @@ const defaultSettings: SettingsData = {
 };
 
 export default function AdminPage() {
+  const { profile } = useAuth();
+  // Gate all admin API calls behind the resolved profile — RequireAdmin renders
+  // children only after auth resolves, but the component itself mounts (and its
+  // useEffects fire) immediately, which used to fire API calls before any
+  // session cookie could be sent -> spurious 401s in the console.
+  const authReady = Boolean(profile);
   const [tab, setTab] = useState("overview");
   const [settings, setSettings] = useState<SettingsData>(defaultSettings);
   const [saving, setSaving] = useState(false);
@@ -143,8 +150,9 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    if (tab === "storybook") loadStorybookOrders();
-  }, [tab, loadStorybookOrders]);
+    if (!authReady || tab !== "storybook") return;
+    loadStorybookOrders();
+  }, [authReady, tab, loadStorybookOrders]);
 
   const loadSettings = useCallback(async () => {
     try {
@@ -157,7 +165,10 @@ export default function AdminPage() {
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { loadSettings(); }, [loadSettings]);
+  useEffect(() => {
+    if (!authReady) return;
+    loadSettings();
+  }, [authReady, loadSettings]);
 
   const saveSetting = async (key: string, value: unknown) => {
     setSaving(true);
@@ -199,8 +210,9 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    if (tab === "payments") loadPayments();
-  }, [tab, loadPayments]);
+    if (!authReady || tab !== "payments") return;
+    loadPayments();
+  }, [authReady, tab, loadPayments]);
 
   // --- AI provider chain state ---
   interface AIChainEntry {
@@ -347,8 +359,9 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    if (tab === "users") loadUsers();
-  }, [tab, loadUsers]);
+    if (!authReady || tab !== "users") return;
+    loadUsers();
+  }, [authReady, tab, loadUsers]);
 
   const updateUser = async (userId: string, updates: Record<string, unknown>) => {
     setUserAction(userId);
@@ -415,8 +428,9 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    if (tab === "support") loadTickets();
-  }, [tab, loadTickets]);
+    if (!authReady || tab !== "support") return;
+    loadTickets();
+  }, [authReady, tab, loadTickets]);
 
   const loadRequests = useCallback(async () => {
     setReqLoading(true);
@@ -431,8 +445,9 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    if (tab === "requests") loadRequests();
-  }, [tab, loadRequests]);
+    if (!authReady || tab !== "requests") return;
+    loadRequests();
+  }, [authReady, tab, loadRequests]);
 
   const loadPayouts = useCallback(async () => {
     setPayoutsLoading(true);
@@ -447,8 +462,9 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    if (tab === "payouts") loadPayouts();
-  }, [tab, loadPayouts]);
+    if (!authReady || tab !== "payouts") return;
+    loadPayouts();
+  }, [authReady, tab, loadPayouts]);
 
   const reviewPayout = async (payoutId: string, action: "approve" | "reject" | "mark_paid") => {
     setPayoutAction(payoutId);
