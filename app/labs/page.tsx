@@ -7,13 +7,11 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { ToolIcon } from "@/components/ui/ToolIcon";
-import { RequireAuth } from "@/components/auth/RequireAuth";
 import { LAB_REGISTRY } from "@/lib/labs/registry";
 
 export default function LabsPage() {
   return (
-    <RequireAuth>
-      <Container className="py-8">
+    <Container className="py-8">
         <PageHeader
           title="Labs"
           description="Experimental AI capabilities — test new features before they graduate into stable tools."
@@ -46,6 +44,5 @@ export default function LabsPage() {
           ))}
         </div>
       </Container>
-    </RequireAuth>
   );
 }

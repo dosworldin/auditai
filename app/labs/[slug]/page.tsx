@@ -8,7 +8,6 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { ToolIcon } from "@/components/ui/ToolIcon";
 import { NotFoundState } from "@/components/ui/Feedback";
 import { Button } from "@/components/ui/Button";
-import { RequireAuth } from "@/components/auth/RequireAuth";
 import { LabClient } from "@/components/labs/LabClient";
 import { getLab } from "@/lib/labs/registry";
 
@@ -33,8 +32,7 @@ export default function LabPage() {
   }
 
   return (
-    <RequireAuth>
-      <Container className="py-8">
+    <Container className="py-8">
         <PageHeader
           title={lab.name}
           description={lab.description}
@@ -54,6 +52,5 @@ export default function LabPage() {
 
         <LabClient lab={lab} />
       </Container>
-    </RequireAuth>
   );
 }

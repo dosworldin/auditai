@@ -19,7 +19,70 @@ import { Dialog } from "@/components/ui/Dialog";
 import { Container } from "@/components/layout/Container";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/Feedback";
-import { RequireAuth } from "@/components/auth/RequireAuth";
+import { useAuth } from "@/lib/auth/context";
+
+/**
+ * Small inline gate for logged-out visitors: they can see the section and
+ * what it does, but actions require signing in (returnTo is preserved).
+ */
+function AuthGateCard({
+  icon,
+  title,
+  description,
+  cta = "Sign in to continue",
+}: {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  cta?: string;
+}) {
+  return (
+    <Card>
+      <CardContent className="flex flex-col items-center gap-4 py-10 text-center">
+        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent text-accent-foreground">
+          {icon}
+        </div>
+        <div className="space-y-1">
+          <h3 className="text-lg font-semibold text-foreground">{title}</h3>
+          <p className="mx-auto max-w-md text-sm text-muted-foreground">{description}</p>
+        </div>
+        <Link href={`/auth?returnTo=${encodeURIComponent("/storybook")}`}>
+          <Button>
+            {cta} <ArrowRight className="h-4 w-4" />
+          </Button>
+        </Link>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Wraps a section: logged-out visitors see an explainer + sign-in CTA. */
+function GatedSection({
+  icon,
+  title,
+  description,
+  cta,
+  children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  cta?: string;
+  children: React.ReactNode;
+}) {
+  const { user, loading } = useAuth();
+  if (loading) {
+    return (
+      <div className="flex justify-center py-8">
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+  if (!user) {
+    return <AuthGateCard icon={icon} title={title} description={description} cta={cta} />;
+  }
+  return <>{children}</>;
+}
 
 /* ------------------------------------------------------------------ */
 
@@ -912,10 +975,22 @@ export default function StorybookClient({ defaultPageCount, minPageCount, maxPag
           <SampleStoriesSection />
         </div>
         <div id="create" className="scroll-mt-20">
-          <CreateWizard onCreated={onCreated} credits={credits} />
+          <GatedSection
+            icon={<Wand2 className="h-5 w-5" />}
+            title="Create your own storybook"
+            description="Pick a theme, upload a photo, and our AI writes the story, illustrates every page, and delivers a print-ready PDF with your child as the hero."
+          >
+            <CreateWizard onCreated={onCreated} credits={credits} />
+          </GatedSection>
         </div>
         <div id="ai-tools" className="scroll-mt-20">
-          <AiStoryTools />
+          <GatedSection
+            icon={<PenLine className="h-5 w-5" />}
+            title="AI story writer & fit check"
+            description="Let the AI write a story from your idea — or check whether an existing story is a fit before turning it into an illustrated book."
+          >
+            <AiStoryTools />
+          </GatedSection>
         </div>
 
         <div id="my-books" className="scroll-mt-20">

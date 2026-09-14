@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { BookOpen } from "lucide-react";
-import { RequireAuth } from "@/components/auth/RequireAuth";
 import StorybookClient from "@/components/storybook/StorybookClient";
 import { getStorybookSettings } from "@/lib/storybook/settings";
 import { Container } from "@/components/layout/Container";
@@ -29,8 +28,8 @@ export default async function StorybookPage() {
             <p className="mx-auto max-w-md text-sm text-muted-foreground">
               The administrator has paused new storybook orders. Please check back soon.
             </p>
-            <Link href="/dashboard">
-              <Button variant="outline">Back to dashboard</Button>
+            <Link href="/">
+              <Button variant="outline">Back to home</Button>
             </Link>
           </CardContent>
         </Card>
@@ -39,13 +38,11 @@ export default async function StorybookPage() {
   }
 
   return (
-    <RequireAuth>
-      <StorybookClient
-        defaultPageCount={settings.defaultPageCount}
-        minPageCount={settings.minPageCount}
-        maxPageCount={settings.maxPageCount}
-        pdfCredits={settings.pdfCredits}
-      />
-    </RequireAuth>
+    <StorybookClient
+      defaultPageCount={settings.defaultPageCount}
+      minPageCount={settings.minPageCount}
+      maxPageCount={settings.maxPageCount}
+      pdfCredits={settings.pdfCredits}
+    />
   );
 }

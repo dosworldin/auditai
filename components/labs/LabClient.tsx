@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Play } from "lucide-react";
+import Link from "next/link";
+import { Play, LogIn } from "lucide-react";
 import type { LabDefinition } from "@/lib/types";
 import type { LabOutput } from "@/lib/engine/types";
+import { useAuth } from "@/lib/auth/context";
 import { ToolIcon } from "@/components/ui/ToolIcon";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -27,6 +29,7 @@ const statusTone: Record<string, "info" | "warning" | "success" | "neutral"> = {
 
 export function LabClient({ lab }: { lab: LabDefinition }) {
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
   const [mode, setMode] = useState<LabMode>("upload");
   const [file, setFile] = useState<SelectedFile | null>(null);
   const [text, setText] = useState("");
@@ -170,9 +173,17 @@ export function LabClient({ lab }: { lab: LabDefinition }) {
           </CardContent>
         </Card>
 
-        <Button size="lg" onClick={run} loading={running} disabled={!inputReady}>
-          <Play className="h-4 w-4" /> Run experiment
-        </Button>
+        {user ? (
+          <Button size="lg" onClick={run} loading={running} disabled={!inputReady}>
+            <Play className="h-4 w-4" /> Run experiment
+          </Button>
+        ) : (
+          <Link href={`/auth?returnTo=${encodeURIComponent(`/labs/${lab.slug}`)}`}>
+            <Button size="lg" disabled={authLoading}>
+              <LogIn className="h-4 w-4" /> Sign in to run this experiment
+            </Button>
+          </Link>
+        )}
 
         {error ? (
           <div
