@@ -1,14 +1,15 @@
 "use client";
 
 import { Globe, Sparkles, AlertCircle, Users } from "lucide-react";
-import type { SimilarDreamInfo } from "@/lib/engine/types";
+import type { SimilarDreamInfo, SimilarDreamMatchDetail } from "@/lib/engine/types";
 import { Badge } from "@/components/ui/Badge";
 
 interface SimilarDreamsProps {
   data: SimilarDreamInfo;
+  matchDetails?: SimilarDreamMatchDetail[];
 }
 
-export function SimilarDreams({ data }: SimilarDreamsProps) {
+export function SimilarDreams({ data, matchDetails }: SimilarDreamsProps) {
   return (
     <div className="rounded-xl border border-border bg-card p-5">
       <div className="flex items-center gap-2">
@@ -21,18 +22,28 @@ export function SimilarDreams({ data }: SimilarDreamsProps) {
         </Badge>
       </div>
 
+      {data.identity ? (
+        <p className="mt-2 text-xs text-muted-foreground">
+          Your anonymous dream identity:{" "}
+          <span className="font-medium text-foreground">{data.identity.alias}</span>
+          {data.identity.country && data.identity.country !== "Unknown" ? (
+            <> · {data.identity.country}</>
+          ) : null}
+        </p>
+      ) : null}
+
       {!data.isReal && (
         <div className="mt-3 flex items-start gap-2 rounded-lg border border-warning/20 bg-warning/5 px-3 py-2 text-xs text-muted-foreground">
           <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
           <span>
             {data.exampleDescription ??
-              "No real matches found. This is a random example generated from the available dataset."}
+              "No real matches found. This is the first recorded dream of its kind — a random comparison identity has been registered for it."}
           </span>
         </div>
       )}
 
       {data.isReal && data.aggregateOnly ? (
-        /* More than 5 matches — show aggregate only */
+        /* More than 5 matches — show count/aggregate only (spec: no detail dump) */
         <div className="mt-4">
           <div className="flex items-center gap-3 rounded-lg bg-muted/50 p-4">
             <Users className="h-5 w-5 text-primary" />
@@ -82,31 +93,54 @@ export function SimilarDreams({ data }: SimilarDreamsProps) {
                   : `${data.totalCount} people reported a similar dream`}
               </p>
 
-              {data.locations.length > 0 && (
+              {matchDetails && matchDetails.length > 0 ? (
                 <div className="mt-3 space-y-2">
-                  {data.locations.map((loc) => (
+                  {matchDetails.map((m, i) => (
                     <div
-                      key={loc.country}
-                      className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-4 py-2.5"
+                      key={`${m.alias}-${i}`}
+                      className="rounded-lg border border-border bg-muted/30 px-4 py-2.5"
                     >
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center justify-between gap-2">
                         <span className="text-sm font-medium text-foreground">
-                          {loc.country}
+                          {m.alias}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {m.country}
+                          {m.country ? " · " : ""}
+                          {Math.round(m.similarity * 100)}% similar
                         </span>
                       </div>
-                      <span className="text-sm text-muted-foreground">
-                        {loc.count === 1 ? "1 person" : `${loc.count} people`}
-                      </span>
+                      <p className="mt-1 text-xs italic text-muted-foreground">
+                        &ldquo;{m.narrativeExcerpt}&rdquo;
+                      </p>
                     </div>
                   ))}
                 </div>
+              ) : (
+                data.locations.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    {data.locations.map((loc) => (
+                      <div
+                        key={loc.country}
+                        className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-4 py-2.5"
+                      >
+                        <span className="text-sm font-medium text-foreground">
+                          {loc.country}
+                        </span>
+                        <span className="text-sm text-muted-foreground">
+                          {loc.count === 1 ? "1 person" : `${loc.count} people`}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )
               )}
             </>
           )}
 
           <p className="mt-3 text-xs text-muted-foreground">
             {data.isReal
-              ? "Country-level information is shown according to platform privacy rules. No personal details are exposed."
+              ? "Only anonymous aliases and country-level information are shown. No personal details are ever exposed."
               : "Example data is clearly distinguished from real database matches."}
           </p>
         </div>

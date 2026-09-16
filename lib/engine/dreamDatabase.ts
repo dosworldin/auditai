@@ -1,7 +1,19 @@
 /**
- * Supabase-backed dream database for Dream AI Analyzer.
- * Replaces the in-memory dreamDatabase.ts store with real DB queries.
- * Preserves all existing matching logic and similarity scoring.
+ * Supabase-backed dream database for Dream AI Analyzer (production).
+ *
+ * Behavior contract:
+ *  - Every COMPLETED analysis is persisted to public.dream_entries with the
+ *    submitting user's id (RLS keeps private data private) plus a detached,
+ *    anonymous/pseudonymous match identity (random alias + country) stored
+ *    on the row for the public matching view.
+ *  - Retrying the same request never duplicates rows: near-duplicate
+ *    narratives are detected by token overlap AND stored content hash.
+ *  - The same submitted dream always resolves to the SAME alias+country —
+ *    the identity is generated once and persisted, never re-rolled.
+ *  - Matching combines keyword/label bonus + token-bag Jaccard similarity
+ *    (lightweight, no vector infra), with an AI semantic pass handled by the
+ *    caller (lib/ai/dreamAI.ts) for meaning-level context.
+ *  - 1–5 matches: individual match details. >5: aggregate count only.
  */
 
 import { getSupabaseAdmin } from "@/lib/db/supabase-server";
@@ -24,6 +36,22 @@ export interface NormalizedDream {
   ending: string;
   country?: string;
   tokenBag: string[];
+  createdAt: string;
+}
+
+/** Detached, non-identifying representation persisted per dream entry. */
+export interface DreamMatchIdentity {
+  alias: string;
+  country: string;
+  createdAt: string;
+}
+
+/** A concrete similar-dream match with its stored anonymous identity. */
+export interface DreamMatchDetail {
+  narrativeExcerpt: string;
+  alias: string;
+  country: string;
+  similarity: number;
   createdAt: string;
 }
 
@@ -156,6 +184,78 @@ export function normalizeDream(narrative: string, country?: string): NormalizedD
   };
 }
 
+/** Stable content hash (FNV-1a) for exact/near-duplicate persistence guard. */
+export function dreamContentHash(narrative: string): string {
+  const normalized = narrative.toLowerCase().replace(/\s+/g, " ").trim();
+  let h = 0x811c9dc5;
+  for (let i = 0; i < normalized.length; i++) {
+    h ^= normalized.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, "0");
+}
+
+/* ------------------------------------------------------------------ */
+/*  Anonymous match identity                                           */
+/* ------------------------------------------------------------------ */
+
+const ALIAS_ADJECTIVES = [
+  "Quiet", "Restless", "Curious", "Midnight", "Silver", "Wandering",
+  "Gentle", "Hidden", "Lucid", "Distant", "Amber", "Velvet", "Northern",
+  "Sleeping", "Dreaming", "Silent", "Golden", "Shadow", "Cosmic", "Fading",
+];
+
+const ALIAS_NOUNS = [
+  "Traveler", "Dreamer", "Wanderer", "Sleeper", "Voyager", "Drifter",
+  "Seeker", "Observer", "Nomad", "Pilgrim", "Sailor", "Rider",
+];
+
+const ALIAS_COUNTRIES = [
+  "India", "United States", "United Kingdom", "Canada", "Australia",
+  "Germany", "Brazil", "Japan", "France", "Netherlands", "Mexico",
+  "Spain", "Italy", "South Africa", "Nigeria", "Philippines",
+];
+
+function pickRandom<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function randomAlias(): string {
+  return `${pickRandom(ALIAS_ADJECTIVES)} ${pickRandom(ALIAS_NOUNS)} #${Math.floor(Math.random() * 9000) + 1000}`;
+}
+
+/**
+ * Deterministic identity for a content hash: derives a stable
+ * alias/country pair from the hash digits, then varies it with a hash-seeded
+ * random tail so distinct dreams get distinct identities while the SAME
+ * dream hash always maps to the SAME identity (consistency requirement).
+ */
+function identityForHash(hash: string): DreamMatchIdentity {
+  const digits = hash.replace(/\D/g, "").padEnd(8, "7");
+  const seed = parseInt(digits.slice(-6), 10) || 123456;
+  const adj = ALIAS_ADJECTIVES[seed % ALIAS_ADJECTIVES.length];
+  const noun = ALIAS_NOUNS[Math.floor(seed / 7) % ALIAS_NOUNS.length];
+  const num = 1000 + (seed % 9000);
+  const country = ALIAS_COUNTRIES[seed % ALIAS_COUNTRIES.length];
+  const createdAt = new Date(2020, 0, 1 + (seed % 366)).toISOString();
+  return {
+    alias: `${adj} ${noun} #${num}`,
+    country,
+    createdAt,
+  };
+}
+
+/** Random identity used only when no prior identity exists for the hash. */
+export function newDreamMatchIdentity(hash: string): DreamMatchIdentity {
+  return {
+    alias: randomAlias(),
+    country: pickRandom(ALIAS_COUNTRIES),
+    createdAt: new Date().toISOString(),
+  };
+}
+
+export { identityForHash };
+
 /* ------------------------------------------------------------------ */
 /*  Similarity scoring                                                 */
 /* ------------------------------------------------------------------ */
@@ -176,48 +276,128 @@ function similarityScore(a: NormalizedDream, b: NormalizedDream): number {
 }
 
 const SIMILARITY_THRESHOLD = 0.32;
+/** Jaccard overlap above which two narratives are considered the same dream. */
+const DUPLICATE_THRESHOLD = 0.75;
+
+/* ------------------------------------------------------------------ */
+/*  DB row shape                                                       */
+/* ------------------------------------------------------------------ */
+
+interface DreamRow {
+  id: string;
+  narrative: string;
+  symbols: string[] | null;
+  emotions: string[] | null;
+  themes: string[] | null;
+  objects: string[] | null;
+  entities: string[] | null;
+  locations: string[] | null;
+  actions: string[] | null;
+  ending: string | null;
+  country: string | null;
+  normalized_vector: Record<string, unknown> | null;
+  match_alias: string | null;
+  match_country: string | null;
+  match_identity_generated_at: string | null;
+  created_at: string;
+}
+
+function rowToNormalized(row: DreamRow): NormalizedDream {
+  return {
+    id: row.id,
+    narrative: row.narrative,
+    symbols: row.symbols ?? [],
+    emotions: row.emotions ?? [],
+    themes: row.themes ?? [],
+    objects: row.objects ?? [],
+    entities: row.entities ?? [],
+    locations: row.locations ?? [],
+    actions: row.actions ?? [],
+    ending: row.ending ?? "",
+    country: row.country ?? undefined,
+    tokenBag:
+      ((row.normalized_vector as Record<string, unknown> | null)?.tokenBag as string[]) ?? [],
+    createdAt: row.created_at,
+  };
+}
 
 /* ------------------------------------------------------------------ */
 /*  DB operations                                                      */
 /* ------------------------------------------------------------------ */
 
-async function getExistingDreams(): Promise<NormalizedDream[]> {
+async function getExistingDreams(limit = 500): Promise<DreamRow[]> {
   try {
     const supabase = await getSupabaseAdmin();
     const { data } = await supabase
       .from("dream_entries")
-      .select("id, narrative, symbols, emotions, themes, objects, entities, locations, actions, ending, country, normalized_vector, created_at")
+      .select(
+        "id, narrative, symbols, emotions, themes, objects, entities, locations, actions, ending, country, normalized_vector, match_alias, match_country, match_identity_generated_at, created_at",
+      )
       .order("created_at", { ascending: false })
-      .limit(500);
+      .limit(limit);
 
-    if (!data) return [];
-
-    return data.map((row) => ({
-      id: row.id,
-      narrative: row.narrative,
-      symbols: (row.symbols as string[]) ?? [],
-      emotions: (row.emotions as string[]) ?? [],
-      themes: (row.themes as string[]) ?? [],
-      objects: (row.objects as string[]) ?? [],
-      entities: (row.entities as string[]) ?? [],
-      locations: (row.locations as string[]) ?? [],
-      actions: (row.actions as string[]) ?? [],
-      ending: row.ending ?? "",
-      country: row.country ?? undefined,
-      tokenBag: ((row.normalized_vector as Record<string, unknown>)?.tokenBag as string[]) ?? [],
-      createdAt: row.created_at,
-    }));
+    return (data as DreamRow[] | null) ?? [];
   } catch {
     return [];
   }
 }
 
-async function saveDreamToDB(dream: NormalizedDream): Promise<string> {
+async function findExistingDream(
+  narrative: string,
+  tokenBag: string[],
+): Promise<DreamRow | null> {
+  try {
+    const supabase = await getSupabaseAdmin();
+    const hash = dreamContentHash(narrative);
+
+    // 1. Exact/near-exact same normalized text (covers retries).
+    const { data: byHash } = await supabase
+      .from("dream_entries")
+      .select(
+        "id, narrative, symbols, emotions, themes, objects, entities, locations, actions, ending, country, normalized_vector, match_alias, match_country, match_identity_generated_at, created_at",
+      )
+      .eq("normalized_vector->>contentHash", hash)
+      .limit(1);
+
+    if (byHash && byHash.length > 0) return byHash[0] as DreamRow;
+
+    // 2. Token-bag duplicate guard (reordered/edited resubmissions).
+    const bagSet = new Set(tokenBag);
+    const { data: rows } = await supabase
+      .from("dream_entries")
+      .select(
+        "id, narrative, symbols, emotions, themes, objects, entities, locations, actions, ending, country, normalized_vector, match_alias, match_country, match_identity_generated_at, created_at",
+      )
+      .order("created_at", { ascending: false })
+      .limit(500);
+
+    for (const row of (rows as DreamRow[] | null) ?? []) {
+      const otherBag = new Set(
+        ((row.normalized_vector as Record<string, unknown> | null)?.tokenBag as string[]) ?? [],
+      );
+      const inter = [...bagSet].filter((t) => otherBag.has(t)).length;
+      const union = new Set([...bagSet, ...otherBag]).size;
+      if (union > 0 && inter / union > DUPLICATE_THRESHOLD) return row;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function saveDreamToDB(
+  dream: NormalizedDream,
+  userId: string,
+  identity: DreamMatchIdentity,
+  aiAnalysis: unknown,
+  contentHash: string,
+): Promise<string> {
   try {
     const supabase = await getSupabaseAdmin();
     const { data } = await supabase
       .from("dream_entries")
       .insert({
+        user_id: userId,
         narrative: dream.narrative,
         symbols: dream.symbols,
         emotions: dream.emotions,
@@ -228,7 +408,11 @@ async function saveDreamToDB(dream: NormalizedDream): Promise<string> {
         actions: dream.actions,
         ending: dream.ending,
         country: dream.country ?? null,
-        normalized_vector: { tokenBag: dream.tokenBag },
+        normalized_vector: { tokenBag: dream.tokenBag, contentHash },
+        match_alias: identity.alias,
+        match_country: identity.country,
+        match_identity_generated_at: identity.createdAt,
+        ai_analysis: aiAnalysis ?? null,
       })
       .select("id")
       .single();
@@ -238,73 +422,89 @@ async function saveDreamToDB(dream: NormalizedDream): Promise<string> {
   }
 }
 
+async function persistMatchResult(dreamEntryId: string, match: SimilarDreamInfo): Promise<void> {
+  try {
+    const supabase = await getSupabaseAdmin();
+    await supabase.from("dream_matches").insert({
+      dream_entry_id: dreamEntryId,
+      is_real: match.isReal,
+      total_count: match.totalCount,
+      locations: match.locations,
+      aggregate_only: match.aggregateOnly,
+      example_description: match.exampleDescription ?? null,
+    });
+  } catch {
+    // Match persistence is best-effort; the entry itself is already saved.
+  }
+}
+
 function findMatchesForDream(
   target: NormalizedDream,
-  existingDreams: NormalizedDream[],
-): SimilarDreamInfo {
-  const matches = existingDreams
+  targetIdentity: DreamMatchIdentity | null,
+  existingRows: DreamRow[],
+): SimilarDreamInfo & { matches: DreamMatchDetail[] } {
+  const scored = existingRows
     .filter((d) => d.id !== target.id)
-    .map((d) => ({ dream: d, score: similarityScore(target, d) }))
+    .map((d) => ({
+      row: d,
+      score: similarityScore(target, rowToNormalized(d)),
+    }))
     .filter((m) => m.score >= SIMILARITY_THRESHOLD)
     .sort((a, b) => b.score - a.score);
 
-  const totalCount = matches.length;
+  const toDetail = (row: DreamRow, score: number): DreamMatchDetail => ({
+    narrativeExcerpt: row.narrative.length > 160 ? `${row.narrative.slice(0, 157)}…` : row.narrative,
+    alias: row.match_alias ?? identityForHash(dreamContentHash(row.narrative)).alias,
+    country: row.match_country ?? row.country ?? "Unknown",
+    similarity: Math.round(Math.min(0.99, score) * 100) / 100,
+    createdAt: row.created_at,
+  });
 
-  if (totalCount === 0) {
-    return generateExampleComparison(target);
+  if (scored.length === 0) {
+    // No real match yet — caller persists a generated identity with the entry.
+    return {
+      isReal: false,
+      totalCount: 0,
+      locations: [],
+      aggregateOnly: false,
+      matches: [],
+    };
   }
 
-  if (totalCount > 5) {
+  if (scored.length > 5) {
     const locationMap = new Map<string, number>();
-    for (const m of matches) {
-      const country = m.dream.country ?? "Unknown";
+    for (const m of scored) {
+      const country = m.row.match_country ?? m.row.country ?? "Unknown";
       locationMap.set(country, (locationMap.get(country) ?? 0) + 1);
     }
     const locations = [...locationMap.entries()]
       .map(([country, count]) => ({ country, count }))
       .sort((a, b) => b.count - a.count);
 
-    return { isReal: true, totalCount, locations, aggregateOnly: true };
+    return {
+      isReal: true,
+      totalCount: scored.length,
+      locations,
+      aggregateOnly: true,
+      matches: [],
+    };
   }
 
   const locationMap = new Map<string, number>();
-  for (const m of matches) {
-    const country = m.dream.country ?? "Unknown";
+  for (const m of scored) {
+    const country = m.row.match_country ?? m.row.country ?? "Unknown";
     locationMap.set(country, (locationMap.get(country) ?? 0) + 1);
   }
   const locations = [...locationMap.entries()]
     .map(([country, count]) => ({ country, count }))
     .sort((a, b) => b.count - a.count);
 
-  return { isReal: true, totalCount, locations, aggregateOnly: false };
-}
-
-function generateExampleComparison(target: NormalizedDream): SimilarDreamInfo {
-  const exampleCountries = ["India", "Canada", "United States", "United Kingdom", "Australia"];
-  const targetCountry = target.country ?? "Unknown";
-  const otherCountries = exampleCountries.filter((c) => c !== targetCountry);
-  const picked = otherCountries
-    .sort(() => Math.random() - 0.5)
-    .slice(0, Math.floor(Math.random() * 3) + 1);
-
-  if (targetCountry !== "Unknown" && Math.random() > 0.4) {
-    picked.push(targetCountry);
-  }
-
-  const locations = picked
-    .sort(() => Math.random() - 0.5)
-    .slice(0, 3)
-    .map((country) => ({ country, count: Math.floor(Math.random() * 4) + 1 }));
-
-  const totalExample = locations.reduce((sum, l) => sum + l.count, 0);
-  const symbolList = target.symbols.length > 0 ? target.symbols.join(", ") : "similar themes";
-
   return {
-    isReal: false,
-    totalCount: totalExample,
+    isReal: true,
+    totalCount: scored.length,
     locations,
     aggregateOnly: false,
-    exampleDescription: `Example based on dreams with ${symbolList}`,
+    matches: scored.slice(0, 5).map((m) => toDetail(m.row, m.score)),
   };
 }
 
@@ -312,29 +512,87 @@ function generateExampleComparison(target: NormalizedDream): SimilarDreamInfo {
 /*  Public API                                                         */
 /* ------------------------------------------------------------------ */
 
-export async function saveAndMatch(dream: NormalizedDream): Promise<SimilarDreamInfo> {
-  const existingDreams = await getExistingDreams();
+export interface SaveAndMatchResult {
+  match: SimilarDreamInfo;
+  /** Individual match details (only when 1–5 matches; empty when aggregated or none). */
+  matches: DreamMatchDetail[];
+  /** The identity persisted for this dream (existing one when duplicate). */
+  identity: DreamMatchIdentity;
+  /** Whether the submission was a duplicate of an already-stored dream. */
+  wasDuplicate: boolean;
+  /** True when the entry failed to persist (matching degraded to ephemeral). */
+  persisted: boolean;
+}
 
-  // Check for near-duplicate narratives
-  const existingMatch = existingDreams.find((d) => {
-    if (d.id === dream.id) return false;
-    const a = new Set(tokenize(d.narrative));
-    const b = new Set(tokenize(dream.narrative));
-    const intersection = [...a].filter((t) => b.has(t)).length;
-    const union = new Set([...a, ...b]).size;
-    return union > 0 && intersection / union > 0.75;
-  });
+/**
+ * Persist a completed dream and compute similar-dream matches.
+ * Never throws — DB failures degrade gracefully (persisted=false) so an
+ * AI-successful analysis is still shown, but duplicates are guarded by the
+ * content hash + token overlap wherever the DB is reachable.
+ */
+export async function saveAndMatch(
+  dream: NormalizedDream,
+  options: {
+    userId: string;
+    aiAnalysis?: unknown;
+  },
+): Promise<SaveAndMatchResult> {
+  const { userId, aiAnalysis } = options;
+  const contentHash = dreamContentHash(dream.narrative);
 
-  if (existingMatch) {
-    return findMatchesForDream(existingMatch, existingDreams);
+  const existingRows = await getExistingDreams();
+
+  // Retry/duplicate guard: if this exact (or near-exact) dream was already
+  // stored, do NOT create another row and do NOT re-roll the identity.
+  const existing = await findExistingDream(dream.narrative, dream.tokenBag);
+  if (existing) {
+    const identity: DreamMatchIdentity = {
+      alias: existing.match_alias ?? identityForHash(contentHash).alias,
+      country: existing.match_country ?? existing.country ?? "Unknown",
+      createdAt: existing.match_identity_generated_at ?? existing.created_at,
+    };
+    const match = findMatchesForDream(rowToNormalized(existing), identity, existingRows);
+    await persistMatchResult(existing.id, match);
+    return { match, matches: match.matches, identity, wasDuplicate: true, persisted: true };
   }
 
-  // Save the new dream
-  const newId = await saveDreamToDB(dream);
-  dream.id = newId;
-  existingDreams.push(dream);
+  // New dream: generate a random anonymous identity ONCE and persist it.
+  const identity: DreamMatchIdentity = newDreamMatchIdentity(contentHash);
+  const newId = await saveDreamToDB(dream, userId, identity, aiAnalysis, contentHash);
+  const persisted = Boolean(newId);
 
-  return findMatchesForDream(dream, existingDreams);
+  const savedRow: DreamRow = {
+    id: newId || `ephemeral-${Date.now()}`,
+    narrative: dream.narrative,
+    symbols: dream.symbols,
+    emotions: dream.emotions,
+    themes: dream.themes,
+    objects: dream.objects,
+    entities: dream.entities,
+    locations: dream.locations,
+    actions: dream.actions,
+    ending: dream.ending,
+    country: dream.country ?? null,
+    normalized_vector: { tokenBag: dream.tokenBag, contentHash },
+    match_alias: identity.alias,
+    match_country: identity.country,
+    match_identity_generated_at: identity.createdAt,
+    created_at: dream.createdAt,
+  };
+
+  const rowsForMatching = persisted ? [savedRow, ...existingRows] : existingRows;
+  const match = findMatchesForDream(
+    rowToNormalized(savedRow),
+    identity,
+    // The freshly saved row must not match against itself.
+    rowsForMatching.filter((r) => r.id !== savedRow.id),
+  );
+
+  if (persisted) {
+    await persistMatchResult(savedRow.id, match);
+  }
+
+  return { match, matches: match.matches, identity, wasDuplicate: false, persisted };
 }
 
 export async function getDreamStoreSize(): Promise<number> {

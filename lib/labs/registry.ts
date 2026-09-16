@@ -114,6 +114,14 @@ const cfgPAMode: ConfigField = {
   help: "Choose the tone for your rewritten message.",
 };
 
+const cfgDreamTraditionalAstrology: ConfigField = {
+  key: "includeTraditionalAstrology",
+  label: "Include Traditional / Astrological Meaning",
+  type: "toggle",
+  default: false,
+  help: "Adds traditional/cultural symbol meanings (snake, water, moon, etc.) from the same analysis — no extra cost. Not scientific fact; nothing is predicted.",
+};
+
 const cfgLanguage: ConfigField = {
   key: "language",
   label: "Output language",
@@ -154,13 +162,13 @@ export const LAB_REGISTRY: LabDefinition[] = [
     "Dream AI Analyzer",
     "Decode the symbols and emotional logic of your subconscious mind.",
     "Experimental AI",
-    "Experimental",
+    "Ready",
     ["text"],
     Moon,
     "violet",
-    [cfgDreamRecall, cfgDreamCountry, cfgLanguage],
+    [cfgDreamRecall, cfgDreamCountry, cfgDreamTraditionalAstrology, cfgLanguage],
     {
-      tables: ["labs_dream_entries", "labs_dream_symbols", "labs_dream_analysis"],
+      tables: ["dream_entries", "dream_matches"],
     },
   ),
 

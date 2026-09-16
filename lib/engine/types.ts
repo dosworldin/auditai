@@ -179,6 +179,17 @@ export interface SimilarDreamInfo {
   aggregateOnly: boolean;
   /** Short description of the example when isReal=false. */
   exampleDescription?: string;
+  /** Anonymous/pseudonymous identity attached to this dream (alias + country). */
+  identity?: { alias: string; country: string };
+}
+
+/** A concrete similar-dream match with its stored anonymous identity. */
+export interface SimilarDreamMatchDetail {
+  narrativeExcerpt: string;
+  alias: string;
+  country: string;
+  similarity: number;
+  createdAt: string;
 }
 
 export interface DreamFollowUp {
@@ -204,6 +215,8 @@ export interface LabOutput {
   disclaimer: string;
   /** Dream-specific: similar dreams matching info. */
   similarDreams?: SimilarDreamInfo;
+  /** Dream-specific: concrete match details when 1-5 similar dreams exist. */
+  similarDreamsMatchDetails?: import("@/lib/engine/types").SimilarDreamMatchDetail[];
   /** Dream-specific: follow-up questions when detail is insufficient. */
   followUp?: DreamFollowUp;
 }
@@ -214,4 +227,7 @@ export interface LabRunPayload {
   url?: string;
   text?: string;
   config?: Record<string, string | number | boolean>;
+  /** Authenticated owner id — used for user-owned persistence (dream entries).
+   *  Internal: never accepted from client JSON, only set by server routes. */
+  userId?: string;
 }

@@ -319,6 +319,13 @@ create table public.dream_entries (
   country text,
   normalized_vector jsonb default '{}',
   follow_up_history jsonb default '[]',
+  -- Anonymous/pseudonymous match identity for the public similar-dream view.
+  -- Never contains real user data; generated once and kept stable per dream.
+  match_alias text,
+  match_country text,
+  match_identity_generated_at timestamptz,
+  -- Persisted AI interpretation (structured JSON from the AI layer).
+  ai_analysis jsonb,
   created_at timestamptz not null default now()
 );
 
@@ -340,6 +347,7 @@ create table public.dream_matches (
   locations jsonb default '[]',
   aggregate_only boolean default false,
   example_description text,
+  matches_detail jsonb default '[]',
   created_at timestamptz not null default now()
 );
 

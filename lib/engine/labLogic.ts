@@ -1,8 +1,14 @@
-import type { LabFinding, LabOutput, LabRunPayload, Severity, DreamFollowUp } from "@/lib/engine/types";
+import type { LabFinding, LabOutput, LabRunPayload, Severity, DreamFollowUp, SimilarDreamMatchDetail } from "@/lib/engine/types";
 import { extractForAudit } from "@/lib/engine/extract";
 import { countWords, splitLines } from "@/lib/engine/text";
 import { getLab } from "@/lib/labs/registry";
 import { normalizeDream, saveAndMatch, getDreamStoreSize } from "@/lib/engine/dreamDatabase";
+import {
+  checkDreamSufficiencyWithAI,
+  interpretDreamWithAI,
+  type DreamSufficiency,
+  type DreamInterpretation,
+} from "@/lib/ai/dreamAI";
 
 export type LabStatus = "EXPERIMENTAL" | "BETA" | "ACTIVE" | "DISABLED" | "ARCHIVED" | "READY" | "COMING_SOON";
 
@@ -52,12 +58,14 @@ type HandlerResult = {
   findings: LabFinding[];
   notes: string[];
   similarDreams?: import("@/lib/engine/types").SimilarDreamInfo;
+  similarDreamsMatchDetails?: import("@/lib/engine/types").SimilarDreamMatchDetail[];
   followUp?: DreamFollowUp;
 };
 
 type Handler = (
   text: string,
   config: Record<string, string | number | boolean>,
+  ctx: { userId?: string },
 ) => HandlerResult | Promise<HandlerResult>;
 
 function requireText(handler: Handler): Handler {
@@ -78,7 +86,7 @@ function requireText(handler: Handler): Handler {
         notes: ["Re-upload a readable file, URL, or pasted text."],
       };
     }
-    return handler(text, config);
+    return handler(text, config, {});
   };
 }
 
@@ -219,89 +227,171 @@ function generateFollowUp(check: DreamDetailCheck, collected: Record<string, str
   };
 }
 
-const dreamAnalyzer: Handler = async (text, config) => {
+const dreamAnalyzer: Handler = async (text, config, ctx) => {
   const low = text.toLowerCase();
   const words = countWords(text);
 
-  /* --- Step 1: Check if dream detail is sufficient --- */
-  const detailCheck = checkDreamDetail(text);
+  /* --- Step 1: AI sufficiency check — ask follow-ups when detail is thin --- */
   const collected: Record<string, string> = { narrative: text };
+  let sufficiency: DreamSufficiency | null = null;
+  try {
+    sufficiency = await checkDreamSufficiencyWithAI(text);
+  } catch {
+    // AI detail-check failure must not block the analysis; the interpretation
+    // step below still enforces its own error handling.
+    sufficiency = null;
+  }
 
-  /* Detect symbols */
+  /* --- Step 2: AI interpretation (entertainment-oriented, grounded) ---
+     Optional traditional/astrological layer rides in the SAME AI call and
+     only when the user enabled it — no extra call, no extra cost when OFF. */
+  const includeTraditionalAstrology = config.includeTraditionalAstrology === true || config.includeTraditionalAstrology === "true";
+  let interpretation: DreamInterpretation | null = null;
+  let aiFailed = false;
+  try {
+    interpretation = await interpretDreamWithAI(text, { includeTraditionalAstrology });
+  } catch {
+    aiFailed = true;
+  }
+
+  // Production contract: if the AI layer failed entirely, do NOT persist a
+  // fake or incomplete "completed" analysis — surface a proper error.
+  if (aiFailed) {
+    throw new Error(
+      "The AI service is temporarily unavailable, so the dream analysis could not be completed. No credits were wasted on a partial result — please try again shortly.",
+    );
+  }
+
+  /* Deterministic detectors (still authoritative for presence/patterns) */
   const foundSymbols: { name: string; matches: string[] }[] = [];
   for (const [symbol, keywords] of Object.entries(DREAM_SYMBOLS)) {
     const matches = keywords.filter((k) => low.includes(k));
     if (matches.length > 0) foundSymbols.push({ name: symbol, matches });
   }
 
-  /* Detect emotions */
   const foundEmotions: { name: string; matches: string[] }[] = [];
   for (const [emotion, keywords] of Object.entries(DREAM_EMOTIONS)) {
     const matches = keywords.filter((k) => low.includes(k));
     if (matches.length > 0) foundEmotions.push({ name: emotion, matches });
   }
 
-  /* Detect context patterns */
   const foundContexts: { name: string; matches: string[] }[] = [];
   for (const [context, keywords] of Object.entries(DREAM_CONTEXTS)) {
     const matches = keywords.filter((k) => low.includes(k));
     if (matches.length > 0) foundContexts.push({ name: context, matches });
   }
 
-  /* Detect setting/environment */
   const settingKeywords = ["city", "forest", "beach", "mountain", "school", "home", "office", "hospital", "night", "day", "dark", "bright", "sky", "ground"];
   const settingMatches = settingKeywords.filter((k) => low.includes(k));
 
   const recallLevel = (config.recallLevel as string) ?? "moderate";
 
-  const summaryParts: string[] = [];
-  summaryParts.push(`Dream analyzed (${words} words, ${recallLevel} recall detail).`);
-  if (foundSymbols.length > 0) {
-    summaryParts.push(`Identified ${foundSymbols.length} symbol(s): ${foundSymbols.map((s) => s.name).join(", ")}.`);
-  }
-  if (foundEmotions.length > 0) {
-    summaryParts.push(`Emotional tone: ${foundEmotions.map((e) => e.name).join(", ")}.`);
-  }
-
+  /* --- Findings: AI interpretation first, deterministic evidence adds depth --- */
   const findings: LabFinding[] = [];
 
-  /* Symbol findings */
-  for (const sym of foundSymbols) {
+  if (interpretation) {
     findings.push(
       lf({
-        id: `sym-${sym.name.toLowerCase().replace(/[^a-z0-9]/g, "-")}`,
+        id: "dream-ai-interpretation",
+        label: "AI Interpretation",
+        detail: interpretation.summary,
+        severity: "Info",
+        confidence: 0.7,
+      }),
+    );
+  }
+
+  /* Optional Traditional / Astrological Interpretation (only when enabled).
+     Entries already passed the grounding gate in the AI layer, so every
+     symbol here is verifiably present in the dream text. */
+  const traditional = interpretation?.traditional;
+  if (traditional) {
+    if (traditional.symbols.length > 0) {
+      findings.push(
+        lf({
+          id: "dream-traditional-astro",
+          label: "Traditional / Astrological Interpretation",
+          detail: `${traditional.intro}\n\n${traditional.symbols
+            .map(
+              (ts) =>
+                `${ts.symbol} — ${ts.meaning}${ts.contextNote ? ` In this dream: ${ts.contextNote}` : ""}`,
+            )
+            .join("\n")}\n\n(Traditional/cultural symbolism — meanings can vary across traditions; not scientific fact and not a prediction of the future.)`,
+          severity: "Info",
+          confidence: 0.55,
+          evidence: traditional.symbols.map((ts) => ts.quote).join(" | "),
+        }),
+      );
+    } else {
+      findings.push(
+        lf({
+          id: "dream-traditional-astro-none",
+          label: "Traditional / Astrological Interpretation",
+          detail: "No recognizable traditional or astrological symbols were found in this dream, so nothing was assumed.",
+          severity: "Info",
+          confidence: 0.55,
+        }),
+      );
+    }
+  }
+
+  /* AI-detected symbols (quotes already verified by the grounding gate) */
+  for (const sym of interpretation?.symbols ?? []) {
+    findings.push(
+      lf({
+        id: `sym-${sym.name.toLowerCase().replace(/[^a-z0-9]/g, "-").slice(0, 40)}`,
+        label: `Symbol: ${sym.name}`,
+        detail: sym.meaning,
+        severity: "Info",
+        confidence: 0.65,
+        evidence: sym.quote,
+      }),
+    );
+  }
+
+  /* AI-detected themes */
+  for (const theme of interpretation?.themes ?? []) {
+    findings.push(
+      lf({
+        id: `ctx-${theme.name.toLowerCase().replace(/[^a-z0-9]/g, "-").slice(0, 40)}`,
+        label: `Theme: ${theme.name}`,
+        detail: theme.meaning,
+        severity: "Info",
+        confidence: 0.6,
+        evidence: theme.quote,
+      }),
+    );
+  }
+
+  /* AI-detected emotions */
+  for (const emo of interpretation?.emotions ?? []) {
+    findings.push(
+      lf({
+        id: `emo-${emo.name.toLowerCase().replace(/[^a-z0-9]/g, "-").slice(0, 40)}`,
+        label: `Emotion: ${emo.name}`,
+        detail: emo.note,
+        severity: "Info",
+        confidence: 0.6,
+        evidence: emo.quote,
+      }),
+    );
+  }
+
+  /* Deterministic symbol backstop: also surface locally-detected symbols the
+     AI may have skipped, keeping the proven keyword detectors authoritative
+     for pattern presence. Deduped against AI symbols by normalized name. */
+  const aiSymbolNames = new Set((interpretation?.symbols ?? []).map((s) => s.name.toLowerCase().replace(/[^a-z0-9]/g, "")));
+  for (const sym of foundSymbols) {
+    const key = sym.name.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (aiSymbolNames.has(key)) continue;
+    findings.push(
+      lf({
+        id: `sym-${key.slice(0, 40)}`,
         label: `Symbol: ${sym.name}`,
         detail: `The symbol "${sym.name}" appears in your dream narrative. Common dream analysis associates this with themes of ${sym.name.toLowerCase() === "flying" ? "freedom, ambition, and desire to escape" : sym.name.toLowerCase() === "water" ? "emotions, the subconscious, and flow of life" : sym.name.toLowerCase() === "teeth falling out" ? "anxiety about appearance, powerlessness, or change" : sym.name.toLowerCase() === "being chased" ? "avoidance of a problem or running from responsibility" : sym.name.toLowerCase() === "death" ? "endings, transformation, and new beginnings" : sym.name.toLowerCase() === "falling" ? "insecurity, loss of control, or letting go" : "deep personal significance"}.`,
         severity: "Info",
         confidence: 0.55,
         evidence: sym.matches.join(", "),
-      }),
-    );
-  }
-
-  /* Emotion findings */
-  for (const emo of foundEmotions) {
-    findings.push(
-      lf({
-        id: `emo-${emo.name.toLowerCase().replace(/[^a-z0-9]/g, "-")}`,
-        label: `Emotion: ${emo.name}`,
-        detail: `Strong ${emo.name.toLowerCase()} undertones detected in the dream narrative. This emotional pattern may reflect ${emo.name.toLowerCase().includes("fear") || emo.name.toLowerCase().includes("anxiety") ? "waking-life stress or unresolved concerns" : emo.name.toLowerCase().includes("joy") || emo.name.toLowerCase().includes("happiness") ? "positive associations or fulfillment" : emo.name.toLowerCase().includes("sadness") ? "processing grief, loss, or longing" : emo.name.toLowerCase().includes("anger") ? "frustration or unresolved conflict" : "your current emotional state"}.`,
-        severity: "Info",
-        confidence: 0.5,
-        evidence: emo.matches.join(", "),
-      }),
-    );
-  }
-
-  /* Context pattern findings */
-  for (const ctx of foundContexts) {
-    findings.push(
-      lf({
-        id: `ctx-${ctx.name.toLowerCase().replace(/[^a-z0-9]/g, "-")}`,
-        label: `Pattern: ${ctx.name}`,
-        detail: `A "${ctx.name}" pattern is present. This recurring motif in dream analysis suggests ${ctx.name.toLowerCase() === "transformation" ? "you may be processing a significant life change" : ctx.name.toLowerCase() === "loss/abandonment" ? "feelings of insecurity or fear of loss" : ctx.name.toLowerCase() === "discovery/revelation" ? "your mind is working through hidden truths or new awareness" : ctx.name.toLowerCase() === "transition" ? "you stand at a crossroads or are moving between life phases" : "an active processing of life events"}.`,
-        severity: "Info",
-        confidence: 0.45,
       }),
     );
   }
@@ -321,7 +411,7 @@ const dreamAnalyzer: Handler = async (text, config) => {
 
   /* Overall */
   const totalSymbols = foundSymbols.length + foundEmotions.length;
-  if (totalSymbols === 0) {
+  if (totalSymbols === 0 && (interpretation?.symbols.length ?? 0) === 0) {
     findings.push(
       lf({
         id: "dream-no-patterns",
@@ -334,70 +424,115 @@ const dreamAnalyzer: Handler = async (text, config) => {
   }
 
   const metrics: Record<string, string | number> = {
-    symbolsFound: foundSymbols.length,
-    emotionsDetected: foundEmotions.length,
-    contextPatterns: foundContexts.length,
+    symbolsFound: Math.max(foundSymbols.length, interpretation?.symbols.length ?? 0),
+    emotionsDetected: Math.max(foundEmotions.length, interpretation?.emotions.length ?? 0),
+    contextPatterns: Math.max(foundContexts.length, interpretation?.themes.length ?? 0),
     wordCount: words,
     recallLevel,
   };
 
   const notes = [
-    "Dream analysis does not replace professional therapy or psychiatric evaluation.",
-    "This is an experimental entertainment/pattern-matching experience, not a medical diagnosis.",
-    "Symbol interpretations are based on common cultural associations and are not definitive.",
+    "This is for entertainment and pattern matching, not therapy or psychiatric evaluation.",
+    "Symbol interpretations reflect common cultural associations, not scientific findings or predictions.",
     "For recurring distressing dreams, consider consulting a mental health professional.",
   ];
 
-  /* --- Step 2: Normalize and save to dream database --- */
+  /* Follow-up metadata is surfaced when the AI judged the description thin.
+     It deepens the NEXT run; this completed analysis still saves normally. */
+  const followUp: DreamFollowUp | undefined =
+    sufficiency && !sufficiency.sufficient && sufficiency.followUpQuestions.length > 0
+      ? {
+          question: sufficiency.followUpQuestions[0] ?? "Can you share more detail about your dream?",
+          collected,
+          missingFields: sufficiency.missing,
+        }
+      : undefined;
+
+  /* --- Step 3: Persist + match against the dream database (once per unique dream) --- */
   const userCountry = (config.country as string) || undefined;
   const normalizedDream = normalizeDream(text, userCountry);
-  const matchResult = await saveAndMatch(normalizedDream);
+  const { userId } = ctx;
+  let similarDreams: import("@/lib/engine/types").SimilarDreamInfo | undefined;
+  let similarDreamsMatchDetails: import("@/lib/engine/types").SimilarDreamMatchDetail[] | undefined;
 
-  /* --- Step 3: Build similar dreams finding --- */
-  if (matchResult.isReal) {
-    const locationStr = matchResult.locations
-      .map((l) => `${l.country} (${l.count})`)
-      .join(", ");
-    findings.push(
-      lf({
-        id: "dream-similar-real",
-        label: "Similar Dreams Found",
-        detail: matchResult.aggregateOnly
-          ? `${matchResult.totalCount} people have reported a similar dream.`
-          : `${matchResult.totalCount} similar dream(s) found: ${locationStr}.`,
-        severity: "Info",
-        confidence: 0.6,
-      }),
-    );
-  } else {
-    findings.push(
-      lf({
-        id: "dream-similar-example",
-        label: "Similar Dream Reports (Example)",
-        detail: `${matchResult.totalCount} example report(s) based on similar dream patterns: ${matchResult.locations.map((l) => `${l.country} (${l.count})`).join(", ")}.`,
-        severity: "Info",
-        confidence: 0.3,
-        evidence: matchResult.exampleDescription ?? "Random example based on available dataset",
-      }),
-    );
+  if (userId) {
+    try {
+      const stored = await saveAndMatch(normalizedDream, {
+        userId,
+        aiAnalysis: interpretation
+          ? {
+              summary: interpretation.summary,
+              symbols: interpretation.symbols,
+              themes: interpretation.themes,
+              emotions: interpretation.emotions,
+              // Optional traditional/astrological layer (only present when
+              // the user enabled it for this run).
+              ...(interpretation.traditional
+                ? { traditional_astrological_interpretation: interpretation.traditional }
+                : {}),
+            }
+          : undefined,
+      });
+      // Persistence contract: a completed analysis MUST be saved. If the DB
+      // insert failed, fail the request (credits are refunded by the route)
+      // instead of showing an unsaved result that would break matching later.
+      if (!stored.persisted) {
+        throw new Error(
+          "The dream could not be saved to the database, so the analysis was not completed. Please try again shortly.",
+        );
+      }
+      similarDreams = { ...stored.match, identity: stored.identity };
+      similarDreamsMatchDetails = stored.matches;
+
+      if (stored.match.isReal) {
+        const locationStr = stored.match.locations.map((l) => `${l.country} (${l.count})`).join(", ");
+        findings.push(
+          lf({
+            id: "dream-similar-real",
+            label: "Similar Dreams Found",
+            detail: stored.match.aggregateOnly
+              ? `${stored.match.totalCount} people have reported a similar dream.`
+              : `${stored.match.totalCount} similar dream(s) found: ${locationStr}.`,
+            severity: "Info",
+            confidence: 0.6,
+          }),
+        );
+      } else {
+        findings.push(
+          lf({
+            id: "dream-similar-first",
+            label: "First Recorded Dream of This Kind",
+            detail: "No similar dream existed in the database yet. An anonymous comparison identity has been registered for this dream and will stay consistent for future matches.",
+            severity: "Info",
+            confidence: 0.6,
+          }),
+        );
+      }
+    } catch {
+      // Persistence/matching failure must not destroy a successful AI analysis.
+      // The result is still returned; only match info is omitted.
+    }
   }
-
-  const similarDreamsInfo = matchResult;
 
   const totalEntries = await getDreamStoreSize();
   metrics.dreamDatabaseSize = totalEntries;
-  metrics.similarDreamsFound = matchResult.totalCount;
-  metrics.similarDreamsIsReal = matchResult.isReal ? 1 : 0;
+  if (similarDreams) {
+    metrics.similarDreamsFound = similarDreams.totalCount;
+    metrics.similarDreamsIsReal = similarDreams.isReal ? 1 : 0;
+  }
 
   return {
-    summary: summaryParts.join(" "),
+    summary:
+      interpretation?.summary ??
+      `Dream analyzed (${words} words, ${recallLevel} recall detail).`,
     metrics,
     findings,
     notes,
-    similarDreams: similarDreamsInfo,
+    followUp,
+    similarDreams,
+    similarDreamsMatchDetails,
   };
 };
-
 /* =====================================================================
    KALESH ANALYZER
    ===================================================================== */
@@ -1237,14 +1372,7 @@ export async function runLab(payload: LabRunPayload): Promise<LabOutput> {
   });
   const text = extraction.text;
 
-  let result: {
-    summary: string;
-    metrics: Record<string, string | number>;
-    findings: LabFinding[];
-    notes: string[];
-    similarDreams?: import("@/lib/engine/types").SimilarDreamInfo;
-    followUp?: DreamFollowUp;
-  };
+  let result: HandlerResult;
   if (!handler) {
     result = {
       summary: `${def.name} is registered but has no lab logic in this phase.`,
@@ -1253,7 +1381,15 @@ export async function runLab(payload: LabRunPayload): Promise<LabOutput> {
       notes: ["Lab outputs are isolated and do not affect production audits."],
     };
   } else {
-    result = await handler(text, (payload.config ?? {}) as Record<string, string | number | boolean>);
+    result = await handler(
+      text,
+      (payload.config ?? {}) as Record<string, string | number | boolean>,
+      {
+        /* Owner id lets the dream database persist user-owned records and
+           keep private data private (never exposed through matching). */
+        userId: payload.userId ?? "",
+      },
+    );
   }
 
   const output: LabOutput = {
@@ -1275,6 +1411,9 @@ export async function runLab(payload: LabRunPayload): Promise<LabOutput> {
   /* Pass through dream-specific fields if present */
   if (result.similarDreams) {
     output.similarDreams = result.similarDreams;
+  }
+  if (result.similarDreamsMatchDetails) {
+    output.similarDreamsMatchDetails = result.similarDreamsMatchDetails;
   }
   if (result.followUp) {
     output.followUp = result.followUp;

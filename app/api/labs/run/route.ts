@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { LabRunPayload } from "@/lib/engine/types";
 import { runLab } from "@/lib/engine/labLogic";
 import { getLab } from "@/lib/labs/registry";
-import { requireAuth, deductCredits, checkPromotionUsage } from "@/lib/auth/session";
+import { requireAuth, deductCredits, addCredits, checkPromotionUsage } from "@/lib/auth/session";
 import { getSupabaseServer } from "@/lib/db/supabase-server";
 import { rateLimit, rateLimitResponse } from "@/lib/ratelimit";
 import { resolveLabCredits } from "@/lib/pricing/tool-pricing";
@@ -37,6 +37,11 @@ function validatePayload(body: unknown): { ok: true; payload: LabRunPayload } | 
   const hasText = Boolean(text && text.trim());
   if (!hasFile && !hasUrl && !hasText) {
     return { ok: false, error: "Provide one of: file, url, or text" };
+  }
+
+  // Basic server-side input validation (defense in depth; the UI also caps).
+  if (text && text.length > 100_000) {
+    return { ok: false, error: "Text input is too long (max 100,000 characters)." };
   }
 
   const payload: LabRunPayload = { labSlug, url, text, config };
@@ -150,23 +155,19 @@ export async function POST(request: Request) {
     }
   }
 
-  // --- Run the lab ---
+  // --- Run the lab (userId is set server-side only; never from client JSON) ---
+  payload.userId = user.id;
+
   const startTime = Date.now();
   try {
     const output = await runLab(payload);
     const durationMs = Date.now() - startTime;
 
-    // Save dream entries for dream analyzer
-    if (payload.labSlug === "dream-ai-analyzer" && payload.text) {
-      await supabase.from("dream_entries").insert({
-        user_id: user.id,
-        narrative: payload.text,
-        symbols: output.findings.filter((f) => f.id.startsWith("sym-")).map((f) => f.label),
-        emotions: output.findings.filter((f) => f.id.startsWith("emo-")).map((f) => f.label),
-        themes: output.findings.filter((f) => f.id.startsWith("ctx-")).map((f) => f.label),
-        country: (payload.config?.country as string) ?? null,
-      });
-    }
+    // Note: dream_entries persistence (text, symbols, AI analysis, anonymous
+    // match identity) and dream_matches records are written inside
+    // lib/engine/dreamDatabase.ts via saveAndMatch — exactly once per unique
+    // dream, with user ownership and retry dedupe. No extra insert here,
+    // otherwise the same dream would be stored twice.
 
     // Update request record
     await supabase
@@ -199,6 +200,27 @@ export async function POST(request: Request) {
         completed_at: new Date().toISOString(),
       })
       .eq("id", requestRecord.id);
+
+    // AI failure policy for the Dream AI Analyzer: refund the charge so a
+    // failed AI analysis never costs the user a credit (no fake results).
+    if (
+      payload.labSlug === "dream-ai-analyzer" &&
+      !usedFreePromotion &&
+      /AI service|AI providers|AI returned/i.test(errorMessage)
+    ) {
+      const refund = await addCredits(
+        user.id,
+        creditsNeeded,
+        "refund",
+        `Refund: ${labDef?.name ?? payload.labSlug} (AI unavailable)`,
+      );
+      if (refund.ok) {
+        await supabase.from("credit_ledger").update({ reference_type: "lab_request" }).eq(
+          "reference_id",
+          requestRecord.id,
+        ).eq("event_type", "lab_use");
+      }
+    }
 
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }

@@ -121,7 +121,7 @@ export function LabOutputView({ output }: { output: LabOutput }) {
                 </span>
               </div>
               <h4 className="mt-2 font-semibold text-foreground">{f.label}</h4>
-              <p className="mt-1 text-sm text-muted-foreground">{f.detail}</p>
+              <p className="mt-1 text-sm text-muted-foreground whitespace-pre-wrap">{f.detail}</p>
               {f.evidence ? (
                 <blockquote className="mt-3 rounded-lg border-l-2 border-border bg-muted/50 px-3 py-2 text-xs italic text-muted-foreground">
                   &ldquo;{f.evidence.slice(0, 280)}
@@ -144,7 +144,9 @@ export function LabOutputView({ output }: { output: LabOutput }) {
       </div>
 
       {/* Similar Dreams (dream-ai-analyzer only) */}
-      {output.similarDreams ? <SimilarDreams data={output.similarDreams} /> : null}
+      {output.similarDreams ? (
+        <SimilarDreams data={output.similarDreams} matchDetails={output.similarDreamsMatchDetails} />
+      ) : null}
 
       {/* Follow-up questions (dream-ai-analyzer only) */}
       {output.followUp ? (
