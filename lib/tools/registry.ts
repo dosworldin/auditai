@@ -48,6 +48,7 @@ import type {
   ToolDefinition,
   ToolCategory,
 } from "@/lib/types";
+import { MIGRATED_TOOLS } from "@/lib/tools/legacy";
 
 /* ------------------------------------------------------------------ */
 /* Pricing defaults (admin can override per-tool via admin panel)      */
@@ -230,10 +231,13 @@ export const categoryLabels: ToolCategory[] = [
 ];
 
 /* ------------------------------------------------------------------ */
-/* The 40-tool registry                                                */
+/* The tool registry: 41 classic tools + 22 migrated former labs       */
 /* ------------------------------------------------------------------ */
 
 export const TOOL_REGISTRY: ToolDefinition[] = [
+  /* Migrated former labs first (incl. 3 gated Coming Soon entries) */
+  ...MIGRATED_TOOLS,
+
   /* Legal (12) */
   {
     slug: "contract-watchdog",

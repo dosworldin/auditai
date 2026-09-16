@@ -7,6 +7,19 @@ export interface ToolLogic {
   analyzer?: string;
   checks: Rule[];
   classifierHints: string[];
+  /**
+   * AI semantic analysis is ENABLED for this tool. Deterministic checks still
+   * run first and remain authoritative for exact calculations, amounts, dates
+   * and presence/absence. AI adds grounded semantic findings on top.
+   */
+  aiEnabled?: boolean;
+  /**
+   * Build the tool-specific context for the AI layer (objective/rules text).
+   * Falls back to a generic focus prompt when not provided.
+   */
+  aiContext?: (config?: Record<string, string | number | boolean>) => string;
+  /** Cap on semantic findings the AI layer may return (default 8). */
+  aiMaxFindings?: number;
 }
 
 type KwInput = {

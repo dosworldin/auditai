@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { ToolIcon } from "@/components/ui/ToolIcon";
-import { LAB_REGISTRY } from "@/lib/labs/registry";
+import { getVisibleLabs } from "@/lib/labs/registry";
 
 export default function LabsPage() {
   return (
@@ -19,7 +19,7 @@ export default function LabsPage() {
         />
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {LAB_REGISTRY.map((lab) => (
+          {getVisibleLabs().map((lab) => (
             <Link key={lab.slug} href={`/labs/${lab.slug}`}>
               <Card interactive>
                 <CardContent className="space-y-3">

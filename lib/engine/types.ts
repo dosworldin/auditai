@@ -112,6 +112,11 @@ export interface AuditReport {
   detectedDocumentType?: string;
   classificationNote?: string;
   ocrNotice?: string;
+  /** Optional notice from the AI semantic layer (provider + count, or skip reason). */
+  aiSemanticNotice?: string;
+  /** Internal: extracted input text, consumed by the AI semantic layer and
+   * stripped before the report is returned/persisted. */
+  __extracted?: string;
 }
 
 export interface AuditRunPayload {

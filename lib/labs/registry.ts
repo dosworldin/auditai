@@ -1,30 +1,4 @@
-import {
-  Archive,
-  Bot,
-  BrainCircuit,
-  FileClock,
-  Fingerprint,
-  Gauge,
-  Globe2,
-  Hand,
-  History,
-  LayoutGrid,
-  ListChecks,
-  Map,
-  MessageCircleWarning,
-  MessageSquareQuote,
-  Moon,
-  Network,
-  Quote,
-  Rocket,
-  ScanSearch,
-  Send,
-  Shield,
-  ShieldCheck,
-  Sparkles,
-  TestTube2,
-  Workflow,
-} from "lucide-react";
+import { Hand, MessageCircleWarning, Moon, Send } from "lucide-react";
 import type {
   ConfigField,
   InputType,
@@ -32,6 +6,16 @@ import type {
   LabDefinition,
   LabStatus,
 } from "@/lib/types";
+import { MIGRATED_ENGINE_DEFS } from "@/lib/labs/migratedEngineDefs";
+
+/**
+ * Labs catalog — the four true experimental experiences.
+ *
+ * The former document-intelligence / research / security / compliance /
+ * forensics labs have been migrated to the main Audit Tools catalog
+ * (lib/tools/legacy.ts) with their engines, slugs and pages unchanged.
+ * The three Future AI entries also moved (still gated as Coming Soon).
+ */
 
 export const labCategories: { id: LabCategory; description: string }[] = [
   {
@@ -70,52 +54,6 @@ export const labCategories: { id: LabCategory; description: string }[] = [
       "Speculative capabilities planned for later phases. Not production ready.",
   },
 ];
-
-const cfgDepth: ConfigField = {
-  key: "depth",
-  label: "Analysis depth",
-  type: "select",
-  options: [
-    { label: "Shallow", value: "shallow" },
-    { label: "Medium", value: "medium" },
-    { label: "Deep", value: "deep" },
-  ],
-  default: "medium",
-};
-
-const cfgOutput: ConfigField = {
-  key: "outputFormat",
-  label: "Output format",
-  type: "select",
-  options: [
-    { label: "Report", value: "report" },
-    { label: "JSON", value: "json" },
-    { label: "Spreadsheet", value: "csv" },
-  ],
-  default: "report",
-};
-
-const cfgThreshold: ConfigField = {
-  key: "threshold",
-  label: "Alert threshold",
-  type: "slider",
-  min: 0,
-  max: 100,
-  step: 5,
-  default: 70,
-};
-
-const cfgLanguage: ConfigField = {
-  key: "language",
-  label: "Output language",
-  type: "select",
-  options: [
-    { label: "English", value: "en" },
-    { label: "Hindi", value: "hi" },
-    { label: "Spanish", value: "es" },
-  ],
-  default: "en",
-};
 
 /* --- Dream-specific config --- */
 const cfgDreamRecall: ConfigField = {
@@ -176,6 +114,18 @@ const cfgPAMode: ConfigField = {
   help: "Choose the tone for your rewritten message.",
 };
 
+const cfgLanguage: ConfigField = {
+  key: "language",
+  label: "Output language",
+  type: "select",
+  options: [
+    { label: "English", value: "en" },
+    { label: "Hindi", value: "hi" },
+    { label: "Spanish", value: "es" },
+  ],
+  default: "en",
+};
+
 function lab(
   slug: string,
   name: string,
@@ -185,14 +135,20 @@ function lab(
   inputs: InputType[],
   icon: LabDefinition["icon"],
   accent: string,
-  config: ConfigField[] = [cfgDepth, cfgOutput],
+  config: ConfigField[] = [],
   extra?: { tables?: string[]; comingSoon?: boolean },
 ): LabDefinition {
   return { slug, name, description, category, status, inputs, icon, accent, config, ...extra };
 }
 
 export const LAB_REGISTRY: LabDefinition[] = [
-  /* === NEW: Dream AI Analyzer === */
+  /*
+   * ENGINE-ONLY defs: the 19 run-able migrated tools keep resolving through
+   * the UNCHANGED lab engine (runLab → getLab). They do NOT appear in the
+   * Labs UI (filtered out below) and live in the Audit Tools catalog.
+   */
+  ...MIGRATED_ENGINE_DEFS,
+
   lab(
     "dream-ai-analyzer",
     "Dream AI Analyzer",
@@ -208,7 +164,6 @@ export const LAB_REGISTRY: LabDefinition[] = [
     },
   ),
 
-  /* === NEW: Kalesh Analyzer === */
   lab(
     "kalesh-analyzer",
     "Kalesh Analyzer",
@@ -224,7 +179,6 @@ export const LAB_REGISTRY: LabDefinition[] = [
     },
   ),
 
-  /* === NEW: Social Escape Assistant === */
   lab(
     "social-escape-assistant",
     "Social Escape Assistant",
@@ -240,7 +194,6 @@ export const LAB_REGISTRY: LabDefinition[] = [
     },
   ),
 
-  /* === NEW: Passive Aggressive Generator === */
   lab(
     "passive-aggressive-generator",
     "Passive Aggressive Generator",
@@ -254,257 +207,6 @@ export const LAB_REGISTRY: LabDefinition[] = [
     {
       tables: ["labs_passive_aggressive_requests", "labs_passive_aggressive_outputs"],
     },
-  ),
-
-  /* Existing labs below */
-
-  /* Experimental AI */
-  lab(
-    "sentiment-tone-analyzer",
-    "Sentiment & Tone Analyzer",
-    "Measures emotional tone and persuasion cues across contracts and correspondence.",
-    "Experimental AI",
-    "Ready",
-    ["text", "pdf", "docx"],
-    MessageSquareQuote,
-    "indigo",
-  ),
-  lab(
-    "contract-style-tuner",
-    "Contract Style Tuner",
-    "Rewrites clause language toward clearer, more balanced phrasing.",
-    "Experimental AI",
-    "Experimental",
-    ["pdf", "docx", "txt"],
-    Workflow,
-    "violet",
-  ),
-  lab(
-    "negotiation-coach",
-    "Negotiation Coach",
-    "Suggests negotiation talking points and fallback positions for a given agreement.",
-    "Experimental AI",
-    "Experimental",
-    ["pdf", "docx", "txt"],
-    Quote,
-    "rose",
-  ),
-  lab(
-    "risk-explainer",
-    "Risk Explainer",
-    "Generates plain-language explanations of complex legal and financial passages.",
-    "Experimental AI",
-    "Ready",
-    ["pdf", "docx", "txt", "text"],
-    Sparkles,
-    "indigo",
-  ),
-
-  /* Document Intelligence */
-  lab(
-    "document-clustering",
-    "Document Clustering",
-    "Groups a folder of documents by topic and structure to surface duplicates and themes.",
-    "Document Intelligence",
-    "Ready",
-    ["pdf", "docx", "txt", "markdown"],
-    LayoutGrid,
-    "sky",
-  ),
-  lab(
-    "smart-redaction",
-    "Smart Redaction",
-    "Detects personal data and suggests redaction masks before documents are shared.",
-    "Document Intelligence",
-    "Experimental",
-    ["pdf", "image", "docx", "txt"],
-    ShieldCheck,
-    "sky",
-    [cfgThreshold, cfgOutput],
-  ),
-  lab(
-    "document-qna",
-    "Document Q&A",
-    "Answers questions grounded in the content of your uploaded documents.",
-    "Document Intelligence",
-    "Ready",
-    ["pdf", "docx", "txt", "markdown"],
-    MessageSquareQuote,
-    "sky",
-  ),
-
-  /* Research */
-  lab(
-    "citation-validator",
-    "Citation Validator",
-    "Cross-checks citations and references against source material where available.",
-    "Research",
-    "Experimental",
-    ["pdf", "txt", "markdown"],
-    Quote,
-    "teal",
-  ),
-  lab(
-    "literature-scanner",
-    "Literature Scanner",
-    "Scans a corpus of research material for relevant themes and contradictions.",
-    "Research",
-    "Experimental",
-    ["pdf", "txt", "markdown"],
-    ScanSearch,
-    "teal",
-  ),
-  lab(
-    "claim-verifier",
-    "Claim Verifier",
-    "Checks factual claims against supplied reference documents.",
-    "Research",
-    "Ready",
-    ["pdf", "docx", "txt", "markdown"],
-    ListChecks,
-    "teal",
-    [cfgThreshold, cfgLanguage],
-  ),
-
-  /* Security */
-  lab(
-    "prompt-injection-tester",
-    "Prompt Injection Tester",
-    "Probes documents for prompt-injection and extraction attempts before AI processing.",
-    "Security",
-    "Experimental",
-    ["pdf", "docx", "txt", "text"],
-    TestTube2,
-    "rose",
-    [cfgDepth],
-  ),
-  lab(
-    "pii-detector",
-    "PII Detector",
-    "Locates personally identifiable information inside documents and files.",
-    "Security",
-    "Ready",
-    ["pdf", "image", "docx", "txt", "csv"],
-    Fingerprint,
-    "rose",
-    [cfgThreshold],
-  ),
-  lab(
-    "link-reputation-scanner",
-    "Link Reputation Scanner",
-    "Assesses links in a document for suspicious or known-bad destinations.",
-    "Security",
-    "Experimental",
-    ["url", "html", "txt"],
-    Globe2,
-    "rose",
-  ),
-
-  /* Compliance */
-  lab(
-    "regulation-change-tracker",
-    "Regulation Change Tracker",
-    "Tracks selected regulations and summarizes changes relevant to your documents.",
-    "Compliance",
-    "Ready",
-    ["text", "pdf"],
-    History,
-    "amber",
-    [cfgThreshold, cfgLanguage],
-  ),
-  lab(
-    "jurisdiction-mapper",
-    "Jurisdiction Mapper",
-    "Maps which jurisdictions a document appears to be governed by.",
-    "Compliance",
-    "Experimental",
-    ["pdf", "docx", "txt", "html"],
-    Map,
-    "amber",
-  ),
-  lab(
-    "consent-record-auditor",
-    "Consent Record Auditor",
-    "Reviews consent and opt-in records for completeness and auditability.",
-    "Compliance",
-    "Ready",
-    ["csv", "xlsx", "json", "txt"],
-    FileClock,
-    "amber",
-    [cfgOutput],
-  ),
-
-  /* Data & Forensics */
-  lab(
-    "metadata-inspector",
-    "Metadata Inspector",
-    "Surfaces hidden metadata and edit history embedded in documents.",
-    "Data & Forensics",
-    "Ready",
-    ["pdf", "docx", "image"],
-    Archive,
-    "slate",
-    [cfgOutput],
-  ),
-  lab(
-    "document-forensics",
-    "Document Forensics",
-    "Analyzes documents for tampering signals, unusual fonts, and version traces.",
-    "Data & Forensics",
-    "Experimental",
-    ["pdf", "docx", "image"],
-    ScanSearch,
-    "slate",
-    [cfgDepth],
-  ),
-  lab(
-    "timeline-reconstructor",
-    "Timeline Reconstructor",
-    "Builds event timelines from a set of documents, emails, or transaction logs.",
-    "Data & Forensics",
-    "Experimental",
-    ["pdf", "csv", "xlsx", "txt"],
-    Network,
-    "slate",
-    [cfgOutput],
-  ),
-
-  /* Future AI */
-  lab(
-    "agentic-negotiation",
-    "Agentic Negotiation",
-    "Speculative autonomous negotiation agents that act on your behalf.",
-    "Future AI",
-    "Coming Soon",
-    ["pdf", "docx", "txt"],
-    Bot,
-    "violet",
-    [cfgDepth, cfgOutput],
-    { comingSoon: true },
-  ),
-  lab(
-    "multimodal-contract-vision",
-    "Multimodal Contract Vision",
-    "Planned vision models that read scanned contracts and handwriting natively.",
-    "Future AI",
-    "Coming Soon",
-    ["image", "pdf"],
-    Gauge,
-    "violet",
-    [cfgDepth, cfgOutput],
-    { comingSoon: true },
-  ),
-  lab(
-    "autonomous-compliance-agent",
-    "Autonomous Compliance Agent",
-    "Planned always-on agent that monitors obligations and deadlines continuously.",
-    "Future AI",
-    "Coming Soon",
-    ["url", "pdf", "csv"],
-    BrainCircuit,
-    "violet",
-    [cfgDepth, cfgOutput],
-    { comingSoon: true },
   ),
 ];
 
@@ -520,14 +222,22 @@ export function getLabsByCategory(): Record<LabCategory, LabDefinition[]> {
   return grouped;
 }
 
-export const LAB_COUNT = LAB_REGISTRY.length;
+/** Slugs that exist only for engine compatibility (rendered as Tools, not Labs). */
+export const MIGRATED_ENGINE_SLUGS: ReadonlySet<string> = new Set(MIGRATED_ENGINE_DEFS.map((l) => l.slug));
 
-export const labCategoryIcon: Record<LabCategory, typeof Rocket> = {
-  "Experimental AI": Rocket,
-  "Document Intelligence": LayoutGrid,
-  Research: Quote,
-  Security: Shield,
-  Compliance: ListChecks,
-  "Data & Forensics": Archive,
-  "Future AI": BrainCircuit,
+export const LAB_COUNT = LAB_REGISTRY.filter((l) => !MIGRATED_ENGINE_SLUGS.has(l.slug)).length;
+
+/** True Labs catalog (UI + sitemap + admin) — exactly the 4 experiences. */
+export function getVisibleLabs(): LabDefinition[] {
+  return LAB_REGISTRY.filter((l) => !MIGRATED_ENGINE_SLUGS.has(l.slug));
+}
+
+export const labCategoryIcon: Record<LabCategory, LabDefinition["icon"]> = {
+  "Experimental AI": Hand,
+  "Document Intelligence": MessageCircleWarning,
+  Research: Moon,
+  Security: MessageCircleWarning,
+  Compliance: Moon,
+  "Data & Forensics": Send,
+  "Future AI": Moon,
 };

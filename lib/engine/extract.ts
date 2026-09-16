@@ -337,18 +337,35 @@ function stripHtml(html: string): string {
 
 /* ------------------------- URL fetching ------------------------- */
 
-export async function fetchUrlText(
-  url: string,
-  maxBytes = 1_500_000,
-): Promise<{ text: string; contentType: string; ok: boolean; rawHtml?: string }> {
-  let parsed: URL;
+export interface FetchUrlResult {
+  text: string;
+  contentType: string;
+  ok: boolean;
+  rawHtml?: string;
+  /** Machine-readable failure cause for clear user-facing errors. */
+  reason?: string;
+}
+
+/** Accepts "docusoft.net", "www.site.com/page", full URLs — returns a valid http(s) URL or null. */
+function normalizeUrlInput(raw: string): URL | null {
+  let candidate = raw.trim();
+  if (!candidate) return null;
+  if (!/^https?:\/\//i.test(candidate)) candidate = `https://${candidate}`;
   try {
-    parsed = new URL(url);
+    const parsed = new URL(candidate);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    // A hostname must contain at least one dot (or be localhost) — catches "https://abc"
+    if (!parsed.hostname.includes(".") && parsed.hostname !== "localhost") return null;
+    return parsed;
   } catch {
-    return { text: "", contentType: "", ok: false };
+    return null;
   }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    return { text: "", contentType: "", ok: false };
+}
+
+export async function fetchUrlText(url: string, maxBytes = 1_500_000): Promise<FetchUrlResult> {
+  const parsed = normalizeUrlInput(url);
+  if (!parsed) {
+    return { text: "", contentType: "", ok: false, reason: `"${url.trim().slice(0, 100)}" is not a valid website address. Example: docusoft.net or https://example.com/page` };
   }
   const hostname = parsed.hostname.toLowerCase();
   const isPrivate =
@@ -363,33 +380,49 @@ export async function fetchUrlText(
     hostname === "::1";
 
   if (isPrivate) {
-    return { text: "", contentType: "", ok: false };
+    return { text: "", contentType: "", ok: false, reason: `${hostname} is a private/internal address — only public websites can be audited.` };
   }
 
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15_000);
-    const res = await fetch(url, {
+    const res = await fetch(parsed.toString(), {
       redirect: "follow",
       signal: controller.signal,
       headers: {
-        "user-agent": "AuditAI/1.0 (+authorized website audit)",
+        "user-agent": "Mozilla/5.0 (compatible; AuditAI/1.0; +website audit)",
         accept: "text/html,application/xhtml+xml,text/plain,*/*",
       },
     });
     clearTimeout(timer);
-    if (!res.ok) return { text: "", contentType: "", ok: false };
+    if (!res.ok) {
+      const hint =
+        res.status === 403
+          ? "the site blocked our audit request (bot protection)"
+          : res.status === 404
+            ? "the page was not found (404)"
+            : res.status === 429
+              ? "the site is rate-limiting us (too many requests)"
+              : res.status >= 500
+                ? "the site's server returned an error"
+                : `the server responded with HTTP ${res.status}`;
+      return { text: "", contentType: "", ok: false, reason: `${parsed.hostname} is reachable but ${hint}. Try the exact page URL.` };
+    }
     const contentType = res.headers.get("content-type") ?? "";
     const raw = await res.arrayBuffer();
     if (raw.byteLength > maxBytes) {
-      return { text: "", contentType, ok: false };
+      return { text: "", contentType, ok: false, reason: `The page at ${parsed.hostname} is too large (${Math.round(raw.byteLength / 1024 / 1024)} MB, limit 1.5 MB).` };
     }
     const isHtml = /html|xml/.test(contentType);
     const decoded = Buffer.from(raw).toString("utf8");
     const text = isHtml ? stripHtml(decoded) : decoded;
     return { text: normalizeText(text), contentType, ok: true, rawHtml: isHtml ? decoded : undefined };
-  } catch {
-    return { text: "", contentType: "", ok: false };
+  } catch (err) {
+    const reason =
+      err instanceof Error && err.name === "AbortError"
+        ? `${hostname} did not respond within 15 seconds (timeout).`
+        : `${hostname} could not be reached (network/DNS error). Check the spelling — e.g. type "docusoft.net" without quotes.`;
+    return { text: "", contentType: "", ok: false, reason };
   }
 }
 
@@ -437,8 +470,9 @@ export async function extractForAudit(
         ocrRequired: false,
         ocrAttempted: false,
         truncated: false,
-        sourceDescription: "URL could not be fetched",
+        sourceDescription: fetched.reason ? `URL could not be fetched: ${fetched.reason}` : "URL could not be fetched",
         ocrNotice:
+          fetched.reason ??
           "The URL could not be fetched (unreachable, private address, blocked, or too large). No content was analyzed.",
       };
     }

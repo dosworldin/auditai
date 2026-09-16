@@ -15,7 +15,7 @@ import { Input, Field } from "@/components/ui/Field";
 import { RequireAdmin } from "@/components/auth/RequireAuth";
 import { useAuth } from "@/lib/auth/context";
 import { TOOL_REGISTRY } from "@/lib/tools/registry";
-import { LAB_REGISTRY } from "@/lib/labs/registry";
+import { getVisibleLabs } from "@/lib/labs/registry";
 import { PROCESSING_DECISIONS } from "@/lib/processing/blueprint";
 import { CredentialsPanel } from "@/components/admin/CredentialsPanel";
 import { GrowthPanel } from "@/components/admin/GrowthPanel";
@@ -573,7 +573,7 @@ export default function AdminPage() {
 
   const platformStats = [
     { label: "Audit tools", value: TOOL_REGISTRY.length, icon: LayoutGrid },
-    { label: "Labs modules", value: LAB_REGISTRY.length, icon: FlaskConical },
+    { label: "Labs modules", value: getVisibleLabs().length, icon: FlaskConical },
     { label: "Routes", value: 45, icon: Activity },
     { label: "Workers", value: 0, icon: ServerCog },
   ];
@@ -1237,7 +1237,7 @@ export default function AdminPage() {
             />
             <CardContent>
               <Table head={<><Th>Module</Th><Th>Category</Th><Th>Status</Th><Th>Credits / run</Th></>}>
-                {LAB_REGISTRY.map((lab) => {
+                {getVisibleLabs().map((lab) => {
                   const effective = labPrices[lab.slug] ?? 1;
                   const isOverridden = labPrices[lab.slug] !== undefined;
                   return (

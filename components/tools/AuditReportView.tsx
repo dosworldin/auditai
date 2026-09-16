@@ -264,6 +264,12 @@ export function AuditReportView({ report }: { report: AuditReport }) {
           </h3>
         </div>
         <p className="mt-2 text-sm leading-relaxed text-foreground">{report.summary}</p>
+        {report.aiSemanticNotice ? (
+          <p className="mt-3 flex items-start gap-2 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+            <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+            <span>{report.aiSemanticNotice}</span>
+          </p>
+        ) : null}
       </div>
 
       {/* Bank reconciliation results */}

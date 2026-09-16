@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { AuditRunPayload } from "@/lib/engine/types";
 import { runAudit } from "@/lib/engine/pipeline";
-import { getToolLogic } from "@/lib/engine/toolLogic";
+import { getEffectiveToolLogic } from "@/lib/engine/migratedLogic";
 import { requireAuth, deductCredits, checkPromotionUsage } from "@/lib/auth/session";
 import { getSupabaseServer } from "@/lib/db/supabase-server";
 import { getTool } from "@/lib/tools/registry";
@@ -19,7 +19,7 @@ function validatePayload(body: unknown): { ok: true; payload: AuditRunPayload } 
   const b = body as Record<string, unknown>;
   const toolSlug = typeof b.toolSlug === "string" ? b.toolSlug.trim() : "";
   if (!toolSlug) return { ok: false, error: "toolSlug is required" };
-  if (!getToolLogic(toolSlug) && toolSlug !== "bank-reconciliation-auditor") {
+  if (!getEffectiveToolLogic(toolSlug) && toolSlug !== "bank-reconciliation-auditor") {
     return { ok: false, error: `Unknown tool: ${toolSlug}` };
   }
   const file = b.file;
@@ -97,6 +97,14 @@ export async function POST(request: Request) {
   if (await isToolDisabled(payload.toolSlug)) {
     return NextResponse.json(
       { error: `"${toolDef?.name ?? payload.toolSlug}" is temporarily disabled by the administrator. Please try again later.` },
+      { status: 403 },
+    );
+  }
+
+  // --- Coming Soon gate (migrated Future AI tools) ---
+  if (toolDef?.comingSoon) {
+    return NextResponse.json(
+      { error: `"${toolDef.name}" is coming soon and cannot be run yet.` },
       { status: 403 },
     );
   }

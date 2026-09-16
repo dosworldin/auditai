@@ -1,8 +1,8 @@
-// File: /home/daytona/codebase/app/labs/[slug]/page.tsx
-import * as entry from '../../../../../app/labs/[slug]/page.js'
+// File: /home/daytona/codebase/app/tools/[slug]/page.tsx
+import * as entry from '../../../../../app/tools/[slug]/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 
-type TEntry = typeof import('../../../../../app/labs/[slug]/page.js')
+type TEntry = typeof import('../../../../../app/tools/[slug]/page.js')
 
 // Check that the entry is a valid entry
 checkFields<Diff<{

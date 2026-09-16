@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
 import { SITE_URL } from "@/lib/site";
 import { TOOL_REGISTRY } from "@/lib/tools/registry";
-import { LAB_REGISTRY } from "@/lib/labs/registry";
+import { LAB_REGISTRY, MIGRATED_ENGINE_SLUGS } from "@/lib/labs/registry";
 
 /**
  * Dynamic sitemap: all public marketing + listing pages, every tool page
@@ -31,7 +31,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: 0.8,
   }));
 
-  const labPages: MetadataRoute.Sitemap = LAB_REGISTRY.map((l) => ({
+  const labPages: MetadataRoute.Sitemap = LAB_REGISTRY.filter((l) => !MIGRATED_ENGINE_SLUGS.has(l.slug)).map((l) => ({
     url: `${SITE_URL}/labs/${l.slug}`,
     lastModified: now,
     changeFrequency: "weekly",

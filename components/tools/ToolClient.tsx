@@ -87,6 +87,7 @@ export function ToolClient({ tool }: { tool: ToolDefinition }) {
 
   const dual = tool.dualFile === true;
   const dualLabels = tool.dualFileLabels ?? ["1. Primary document", "2. Second document"];
+  const comingSoon = tool.comingSoon === true;
 
   const inputReady =
     (currentMode === "upload" && file !== null && (!dual || secondFile !== null)) ||
@@ -97,6 +98,11 @@ export function ToolClient({ tool }: { tool: ToolDefinition }) {
     currentMode === "upload" && file !== null ? classifyOcrNeed(file.kind) : false;
 
   const run = async () => {
+    if (comingSoon) {
+      setError(`${tool.name} is coming soon and cannot be run yet.`);
+      setStatus("error");
+      return;
+    }
     if (!inputReady) {
       setError("Please provide a valid input before running the audit.");
       setStatus("error");
@@ -273,7 +279,7 @@ export function ToolClient({ tool }: { tool: ToolDefinition }) {
         </Card>
 
         <div className="flex flex-wrap items-center gap-3">
-          <Button size="lg" onClick={run} loading={status === "running"} disabled={!inputReady}>
+          <Button size="lg" onClick={run} loading={status === "running"} disabled={!inputReady || comingSoon}>
             {status === "running" ? (
               "Running audit..."
             ) : (

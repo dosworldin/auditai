@@ -96,6 +96,11 @@ export interface ToolDefinition {
   reportSections: ReportSection[];
   icon: LucideIcon;
   accent: string;
+  /** Maturity status. Most tools are "Ready"; migrated former labs keep their
+   * original status ("Ready"/"Experimental"), Future AI entries show "Coming Soon". */
+  status?: CatalogStatus;
+  /** When true the tool is not yet active and shows a Coming Soon state (no runs). */
+  comingSoon?: boolean;
   /** When true the tool requires TWO simultaneous file uploads (e.g. bank reconciliation). */
   dualFile?: boolean;
   /** Labels for the two uploads when dualFile is true. */
@@ -104,6 +109,10 @@ export interface ToolDefinition {
 
 export type LabStatus = "Experimental" | "Beta" | "Ready" | "Coming Soon";
 
+/**
+ * Shared catalog category. Labs use the four Experimental AI categories;
+ * migrated former-lab tools reuse their original category under Audit Tools.
+ */
 export type LabCategory =
   | "Experimental AI"
   | "Document Intelligence"
@@ -112,6 +121,9 @@ export type LabCategory =
   | "Compliance"
   | "Data & Forensics"
   | "Future AI";
+
+/** Maturity status shared by catalog entries (tools + labs). */
+export type CatalogStatus = LabStatus;
 
 export interface LabDefinition {
   slug: string;
