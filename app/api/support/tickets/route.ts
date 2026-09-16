@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth, requireAdmin } from "@/lib/auth/session";
 import { getSupabaseServer } from "@/lib/db/supabase-server";
+import { notifyAdmin } from "@/lib/admin/notify";
 import { rateLimit, rateLimitResponse } from "@/lib/ratelimit";
 
 export const dynamic = "force-dynamic";
@@ -78,6 +79,13 @@ export async function POST(request: Request) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Admin live-activity notification (best-effort).
+  notifyAdmin({
+    type: "support_ticket",
+    summary: `New support ticket from ${user.profile.display_name || user.email || user.id}: “${subject}”`,
+    detail: { ticket_id: ticket.id, category: category ?? "general", priority: priority ?? "normal", user_email: user.email },
+  });
 
   return NextResponse.json({ ticket }, { status: 201 });
 }

@@ -128,6 +128,10 @@ export interface AuditRunPayload {
 export interface ExtractionResult {
   text: string;
   inputType: string;
+  /** Raw fetched HTML for URL inputs — needed by SEO/accessibility/privacy
+   * analyzers that inspect tags (<title>, meta, canonical, alt, ld+json) which
+   * are destroyed by stripHtml(). Undefined for file/text inputs. */
+  rawHtml?: string;
   pages?: number;
   usedOcr: boolean;
   ocrRequired: boolean;

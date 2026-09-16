@@ -97,7 +97,17 @@ export async function extractFileText(
     try {
       const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
       const data = new Uint8Array(buffer);
-      const doc = await pdfjs.getDocument({ data, useSystemFonts: true }).promise;
+      // pdfjs in Node needs the bundled standard fonts for PDFs that do not embed
+      // their own fonts (very common with resume/invoice generators). Without this
+      // the text layer can fail to build and we fall into the catch branch with
+      // an empty extraction (the "Words: 0" bug).
+      const doc = await pdfjs.getDocument({
+        data,
+        useSystemFonts: true,
+        standardFontDataUrl: "node_modules/pdfjs-dist/standard_fonts/",
+        cMapUrl: "node_modules/pdfjs-dist/cmaps/",
+        cMapPacked: true,
+      }).promise;
       let text = "";
       let textItems = 0;
       const numPages = doc.numPages;
@@ -157,14 +167,33 @@ export async function extractFileText(
         sourceDescription: "Scanned PDF - OCR required",
       };
     } catch {
+      // pdfjs failed to parse the PDF. Last resort: try OCR on the raw buffer
+      // (works for many "broken text layer" PDFs since rendering falls back to
+      // raster OCR in tesseract). If OCR also fails, report honestly.
+      if (opts.allowOcr !== false) {
+        const ocr = await runOcrOnBuffer(buffer, "pdf", opts.ocrLanguages);
+        if (ocr && ocr.text.trim().length > 0) {
+          return {
+            text: normalizeText(ocr.text),
+            inputType: "pdf",
+            usedOcr: true,
+            ocrRequired: true,
+            ocrAttempted: true,
+            truncated: false,
+            sourceDescription: "PDF (text-layer parse failed — OCR applied)",
+          };
+        }
+      }
       return {
         text: "",
         inputType: "pdf",
         usedOcr: false,
-        ocrRequired: false,
-        ocrAttempted: false,
+        ocrRequired: true,
+        ocrAttempted: opts.allowOcr !== false,
         truncated: false,
-        sourceDescription: "PDF could not be parsed",
+        ocrNotice:
+          "This PDF could not be parsed and OCR also failed. Re-export the file as a text-based PDF (e.g. \"Save as PDF\" from Word/Docs) and try again.",
+        sourceDescription: "PDF parse failed",
       };
     }
   }
@@ -311,7 +340,7 @@ function stripHtml(html: string): string {
 export async function fetchUrlText(
   url: string,
   maxBytes = 1_500_000,
-): Promise<{ text: string; contentType: string; ok: boolean }> {
+): Promise<{ text: string; contentType: string; ok: boolean; rawHtml?: string }> {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -358,7 +387,7 @@ export async function fetchUrlText(
     const isHtml = /html|xml/.test(contentType);
     const decoded = Buffer.from(raw).toString("utf8");
     const text = isHtml ? stripHtml(decoded) : decoded;
-    return { text: normalizeText(text), contentType, ok: true };
+    return { text: normalizeText(text), contentType, ok: true, rawHtml: isHtml ? decoded : undefined };
   } catch {
     return { text: "", contentType: "", ok: false };
   }
@@ -416,6 +445,7 @@ export async function extractForAudit(
     return {
       text: fetched.text,
       inputType: "url",
+      rawHtml: fetched.rawHtml,
       usedOcr: false,
       ocrRequired: false,
       ocrAttempted: false,

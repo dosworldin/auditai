@@ -16,6 +16,7 @@
  */
 
 import { uploadInitImage, startPageGeneration, pollGeneration } from "./leonardo";
+import { getEnv } from "@/lib/env/runtime";
 
 export interface IllustrateRequest {
   prompt: string;
@@ -32,10 +33,17 @@ export interface IllustrateResult {
   provider: "gemini" | "leonardo";
 }
 
-const GEMINI_IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-image";
+let cachedImageModel: string | null = null;
 
-function geminiKey(): string | null {
-  return process.env.GEMINI_API_KEY || null;
+/** Gemini image model — admin-settable via Admin → Credentials (GEMINI_IMAGE_MODEL). */
+async function imageModel(): Promise<string> {
+  if (cachedImageModel) return cachedImageModel;
+  cachedImageModel = (await getEnv("GEMINI_IMAGE_MODEL")) || "gemini-2.5-flash-image";
+  return cachedImageModel;
+}
+
+async function geminiKey(): Promise<string | null> {
+  return (await getEnv("GEMINI_API_KEY")) ?? null;
 }
 
 /** Call Gemini image generation directly. Returns PNG/JPEG bytes or null. */
@@ -54,7 +62,7 @@ async function geminiImage(req: IllustrateRequest): Promise<Buffer | null> {
   }
 
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_IMAGE_MODEL}:generateContent?key=${key}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${await imageModel()}:generateContent?key=${key}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -123,5 +131,3 @@ export async function generateIllustration(
 
   throw new Error(`Illustration failed (${errors.join(" | ")})`);
 }
-
-export { GEMINI_IMAGE_MODEL };

@@ -3,6 +3,7 @@ import { getSupabaseServer, getSupabaseAdmin } from "@/lib/db/supabase-server";
 import { requireAuth, deductCredits } from "@/lib/auth/session";
 import { getStorybookSettings } from "@/lib/storybook/settings";
 import { rateLimit, rateLimitResponse } from "@/lib/ratelimit";
+import { notifyAdmin } from "@/lib/admin/notify";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -209,6 +210,13 @@ export async function POST(request: Request) {
     await admin.storage.from("storybook-assets").remove([photoPath]);
     return NextResponse.json({ error: deduction.error ?? "Credit deduction failed" }, { status: 402 });
   }
+
+  // Admin live-activity notification (best-effort).
+  notifyAdmin({
+    type: "storybook_order",
+    summary: `New storybook order: “${childName}” (${pageCount}p, ${theme}, ${language}) by ${user.profile.display_name || user.email || user.id} — ${settings.pdfCredits} credits`,
+    detail: { order_id: (order as { id: string }).id, credits: settings.pdfCredits, user_email: user.email },
+  });
 
   return NextResponse.json(
     {

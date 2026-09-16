@@ -7,6 +7,7 @@ import { getSupabaseServer } from "@/lib/db/supabase-server";
 import { getTool } from "@/lib/tools/registry";
 import { rateLimit, rateLimitResponse } from "@/lib/ratelimit";
 import { resolveToolCredits, isToolDisabled } from "@/lib/pricing/tool-pricing";
+import { notifyAdmin } from "@/lib/admin/notify";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -131,7 +132,7 @@ export async function POST(request: Request) {
       tool_slug: payload.toolSlug,
       tool_name: toolDef?.name ?? payload.toolSlug,
       document_name: payload.documentName ?? null,
-      input_type: payload.file?.kind ?? payload.url ? "url" : "text",
+      input_type: payload.file ? payload.file.kind : payload.url ? "url" : "text",
       config: payload.config ?? {},
       status: "processing",
     })
@@ -200,6 +201,13 @@ export async function POST(request: Request) {
       high_count: severityCounts.highCount,
       medium_count: severityCounts.mediumCount,
       low_count: severityCounts.lowCount,
+    });
+
+    // Admin live-activity notification (best-effort, fire-and-forget).
+    notifyAdmin({
+      type: "audit_run",
+      summary: `Audit run: ${toolDef?.name ?? payload.toolSlug} by ${user.profile.display_name || user.email || user.id} — ${report.findings.length} findings`,
+      detail: { request_id: requestRecord.id, tool: payload.toolSlug, findings: report.findings.length },
     });
 
     // Update request status

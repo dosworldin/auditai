@@ -7,6 +7,7 @@
  */
 
 import { getSupabaseServer } from "@/lib/db/supabase-server";
+import { getEnv } from "@/lib/env/runtime";
 
 export type PayPalMode = "sandbox" | "live";
 
@@ -37,8 +38,8 @@ export async function getPayPalConfig(): Promise<PayPalConfig> {
     // default sandbox
   }
 
-  const clientId = process.env.PAYPAL_CLIENT_ID ?? null;
-  const clientSecret = process.env.PAYPAL_CLIENT_SECRET ?? null;
+  const clientId = (await getEnv("PAYPAL_CLIENT_ID")) ?? null;
+  const clientSecret = (await getEnv("PAYPAL_CLIENT_SECRET")) ?? null;
 
   return {
     enabled: true,

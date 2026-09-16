@@ -12,6 +12,7 @@
  */
 
 import { getSupabaseServer } from "@/lib/db/supabase-server";
+import { getEnv } from "@/lib/env/runtime";
 
 export interface PaymentGatewayConfig {
   paypalEnabled: boolean;
@@ -56,13 +57,13 @@ export async function getPaymentGatewayConfig(): Promise<PaymentGatewayConfig> {
     return typeof v === "string" && v.length > 0 ? v : fallback;
   };
 
+  const paypalReady =
+    Boolean(await getEnv("PAYPAL_CLIENT_ID")) && Boolean(await getEnv("PAYPAL_CLIENT_SECRET"));
+
   const customInstructionsRaw = map.get("payment_custom_instructions");
   const customInstructions = Array.isArray(customInstructionsRaw)
     ? (customInstructionsRaw as unknown[]).filter((i): i is string => typeof i === "string" && i.trim().length > 0)
     : [];
-
-  const paypalReady =
-    Boolean(process.env.PAYPAL_CLIENT_ID) && Boolean(process.env.PAYPAL_CLIENT_SECRET);
 
   const paypalModeRaw = map.get("payment_paypal_mode");
   const paypalMode: "sandbox" | "live" = paypalModeRaw === "live" ? "live" : "sandbox";

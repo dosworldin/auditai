@@ -16,7 +16,17 @@
  * your Lulu account for each trim size, e.g. "PAGE_SIZE_866X1117" → A4-ish).
  */
 
-const API_BASE = process.env.POD_API_BASE || "https://api.lulu.com";
+import { getEnv } from "@/lib/env/runtime";
+
+let cachedApiBase: string | null = null;
+
+/** Lulu API base — admin-settable via Admin → Credentials (POD_API_BASE).
+ *  Production: https://api.lulu.com — Sandbox: https://api.sandbox.lulu.com */
+export async function getApiBase(): Promise<string> {
+  if (cachedApiBase) return cachedApiBase;
+  cachedApiBase = (await getEnv("POD_API_BASE")) || "https://api.lulu.com";
+  return cachedApiBase;
+}
 
 export interface PodAddress {
   name: string;
@@ -51,13 +61,13 @@ export interface PodJob {
 let cachedToken: { token: string; exp: number } | null = null;
 
 async function getToken(): Promise<string> {
-  const key = process.env.POD_CLIENT_KEY || process.env.LULU_CLIENT_KEY;
-  const secret = process.env.POD_CLIENT_SECRET || process.env.LULU_CLIENT_SECRET;
-  if (!key || !secret) throw new Error("POD_CLIENT_KEY / POD_CLIENT_SECRET are not configured");
+  const key = (await getEnv("POD_CLIENT_KEY")) || (await getEnv("LULU_CLIENT_KEY"));
+  const secret = (await getEnv("POD_CLIENT_SECRET")) || (await getEnv("LULU_CLIENT_SECRET"));
+  if (!key || !secret) throw new Error("POD_CLIENT_KEY / POD_CLIENT_SECRET are not configured (Admin → Credentials)");
 
   if (cachedToken && cachedToken.exp > Date.now() + 30_000) return cachedToken.token;
 
-  const res = await fetch(`${API_BASE}/oauth2/token`, {
+  const res = await fetch(`${await getApiBase()}/oauth2/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -76,10 +86,11 @@ async function getToken(): Promise<string> {
   return cachedToken.token;
 }
 
-/** Public: is POD configured? */
-export function isPodConfigured(): boolean {
-  return Boolean((process.env.POD_CLIENT_KEY || process.env.LULU_CLIENT_KEY) &&
-    (process.env.POD_CLIENT_SECRET || process.env.LULU_CLIENT_SECRET));
+/** Public: is POD configured? (async — resolves through the managed registry) */
+export async function isPodConfigured(): Promise<boolean> {
+  const key = (await getEnv("POD_CLIENT_KEY")) || (await getEnv("LULU_CLIENT_KEY"));
+  const secret = (await getEnv("POD_CLIENT_SECRET")) || (await getEnv("LULU_CLIENT_SECRET"));
+  return Boolean(key && secret);
 }
 
 /** Estimate printing + shipping cost (USD). */
@@ -88,7 +99,7 @@ export async function podCostEstimate(
   countryCode: string,
 ): Promise<{ totalUsd: number }> {
   const token = await getToken();
-  const res = await fetch(`${API_BASE}/print-jobs/cost-calculators/?line_items=[{"page_count":${item.pageCount},"pod_package_id":"${item.productId}","quantity":${item.quantity}}]&currency=USD&country_code=${encodeURIComponent(countryCode)}`, {
+  const res = await fetch(`${await getApiBase()}/print-jobs/cost-calculators/?line_items=[{"page_count":${item.pageCount},"pod_package_id":"${item.productId}","quantity":${item.quantity}}]&currency=USD&country_code=${encodeURIComponent(countryCode)}`, {
     headers: { Authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(30_000),
   });
@@ -138,7 +149,7 @@ export async function podCreateJob(options: {
     },
   };
 
-  const res = await fetch(`${API_BASE}/print-jobs/`, {
+  const res = await fetch(`${await getApiBase()}/print-jobs/`, {
     method: "POST",
     body: JSON.stringify(body),
     headers: {
@@ -167,7 +178,7 @@ export async function podCreateJob(options: {
 /** Fetch job status (used by the status endpoint + webhook-less polling). */
 export async function podGetJob(jobId: string): Promise<PodJob | null> {
   const token = await getToken();
-  const res = await fetch(`${API_BASE}/print-jobs/${encodeURIComponent(jobId)}/`, {
+  const res = await fetch(`${await getApiBase()}/print-jobs/${encodeURIComponent(jobId)}/`, {
     headers: { Authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(30_000),
   });

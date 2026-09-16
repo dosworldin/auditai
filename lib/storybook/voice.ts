@@ -7,7 +7,17 @@
  * can play it with a plain <audio> element.
  */
 
-const TTS_MODEL = process.env.GEMINI_TTS_MODEL || "gemini-2.5-flash-preview-tts";
+import { getEnv } from "@/lib/env/runtime";
+
+let cachedTtsModel: string | null = null;
+
+/** Gemini TTS model — admin-settable via Admin → Credentials (GEMINI_TTS_MODEL). */
+async function ttsModel(): Promise<string> {
+  if (cachedTtsModel) return cachedTtsModel;
+  cachedTtsModel = (await getEnv("GEMINI_TTS_MODEL")) || "gemini-2.5-flash-preview-tts";
+  return cachedTtsModel;
+}
+
 const SAMPLE_RATE = 24_000;
 
 export type NarrationVoice =
@@ -54,14 +64,14 @@ export function pcmToWav(pcm: Buffer, sampleRate = SAMPLE_RATE): Buffer {
 
 /** Generate one narration track. Returns WAV bytes. */
 export async function narratePage(text: string, voice: string): Promise<NarratePageResult> {
-  const key = process.env.GEMINI_API_KEY;
+  const key = await getEnv("GEMINI_API_KEY");
   if (!key) throw new Error("GEMINI_API_KEY is not configured (required for voice narration)");
   if (!text.trim()) throw new Error("Narration: empty page text");
 
   const style = VOICE_PROMPTS[voice] ?? VOICE_PROMPTS.Kore;
 
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent?key=${key}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${await ttsModel()}:generateContent?key=${key}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -103,4 +113,4 @@ export async function narratePage(text: string, voice: string): Promise<NarrateP
   throw new Error("Gemini TTS returned no audio");
 }
 
-export { TTS_MODEL, VOICE_PROMPTS };
+export { VOICE_PROMPTS };

@@ -6,6 +6,7 @@ import { requireAuth, deductCredits, checkPromotionUsage } from "@/lib/auth/sess
 import { getSupabaseServer } from "@/lib/db/supabase-server";
 import { rateLimit, rateLimitResponse } from "@/lib/ratelimit";
 import { resolveLabCredits } from "@/lib/pricing/tool-pricing";
+import { notifyAdmin } from "@/lib/admin/notify";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -113,7 +114,7 @@ export async function POST(request: Request) {
       user_id: user.id,
       lab_slug: payload.labSlug,
       status: "processing",
-      input_type: payload.file?.kind ?? payload.url ? "url" : "text",
+      input_type: payload.file ? payload.file.kind : payload.url ? "url" : "text",
       input_text: payload.text ?? null,
       config: payload.config ?? {},
     })
@@ -177,6 +178,13 @@ export async function POST(request: Request) {
         completed_at: new Date().toISOString(),
       })
       .eq("id", requestRecord.id);
+
+    // Admin live-activity notification (best-effort, fire-and-forget).
+    notifyAdmin({
+      type: "lab_run",
+      summary: `Lab run: ${labDef?.name ?? payload.labSlug} by ${user.profile.display_name || user.email || user.id}`,
+      detail: { request_id: requestRecord.id, lab: payload.labSlug },
+    });
 
     return NextResponse.json(output, { status: 200 });
   } catch (err) {

@@ -3,16 +3,17 @@ import { getSupabaseServer, getSupabaseAdmin } from "@/lib/db/supabase-server";
 import { requireAuth, deductCredits } from "@/lib/auth/session";
 import { getStorybookSettings } from "@/lib/storybook/settings";
 import { isPodConfigured, podCostEstimate, podCreateJob, type PodAddress } from "@/lib/storybook/pod";
+import { getEnv } from "@/lib/env/runtime";
 import { rateLimit, rateLimitResponse } from "@/lib/ratelimit";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /** Map an order's page count to a Lulu POD package (A4-style paperback). */
-function podPackageId(): string {
+async function podPackageId(): Promise<string> {
   // A4-ish paperback ("PAGE_SIZE_866X1117" = 8.66" x 11.17", i.e. A4).
-  // Configurable so admins can switch to square/hardcover products later.
-  return process.env.POD_PACKAGE_ID || "PAGE_SIZE_866X1117_PBW";
+  // Admin-settable via Admin → Credentials (POD_PACKAGE_ID).
+  return (await getEnv("POD_PACKAGE_ID")) || "PAGE_SIZE_866X1117_PBW";
 }
 
 /**
@@ -36,7 +37,7 @@ export async function POST(
   if (!rl.ok) return rateLimitResponse(rl);
 
   const settings = await getStorybookSettings();
-  if (!settings.podEnabled || !isPodConfigured()) {
+  if (!settings.podEnabled || !(await isPodConfigured())) {
     return NextResponse.json(
       { error: "Printed copies are not available right now." },
       { status: 403 },
@@ -81,7 +82,7 @@ export async function POST(
 
   try {
     const { totalUsd } = await podCostEstimate(
-      { productId: podPackageId(), pageCount: row.page_count, quantity: 1 },
+      { productId: await podPackageId(), pageCount: row.page_count, quantity: 1 },
       countryCode,
     );
     const markup = 1 + settings.podMarkupPercent / 100;
@@ -122,7 +123,7 @@ export async function PUT(
   if (!rl.ok) return rateLimitResponse(rl);
 
   const settings = await getStorybookSettings();
-  if (!settings.podEnabled || !isPodConfigured()) {
+  if (!settings.podEnabled || !(await isPodConfigured())) {
     return NextResponse.json({ error: "Printed copies are not available right now." }, { status: 403 });
   }
 
@@ -213,7 +214,7 @@ export async function PUT(
     const job = await podCreateJob({
       lineItems: [
         {
-          productId: podPackageId(),
+          productId: await podPackageId(),
           pageTitle: row.story_json?.title ?? `${row.child_name}'s Storybook`,
           pageCount: row.page_count,
           interiorFileUrl: signedInterior.signedUrl,

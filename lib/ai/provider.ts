@@ -13,6 +13,8 @@
  * the failover order — nothing is hardcoded in the request path.
  */
 
+import { getEnv } from "@/lib/env/runtime";
+
 export interface AIRequest {
   prompt: string;
   systemPrompt?: string;
@@ -142,22 +144,27 @@ async function getAdminChain(): Promise<ChainProvider[]> {
   return envChain;
 }
 
-function resolveApiKey(entry: ChainProvider): string | null {
+/**
+ * Resolve the API key for a chain entry.
+ * Order: explicit env-var name → key stored in the setting → managed registry
+ * (DB override → process.env) for builtins.
+ */
+async function resolveApiKey(entry: ChainProvider): Promise<string | null> {
   // 1. explicit env var name wins
   if (entry.apiKeyEnv) {
-    const v = process.env[entry.apiKeyEnv];
+    const v = await getEnv(entry.apiKeyEnv);
     if (v) return v;
   }
   // 2. key stored in the setting itself (admin convenience)
   if (entry.apiKey) return entry.apiKey;
-  // 3. builtin fallbacks
-  if (entry.id === "deepseek" && process.env.DEEPSEEK_API_KEY) return process.env.DEEPSEEK_API_KEY;
-  if (entry.id === "gemini" && process.env.GEMINI_API_KEY) return process.env.GEMINI_API_KEY;
+  // 3. builtin managed keys (DB override → process.env)
+  if (entry.id === "deepseek") return (await getEnv("DEEPSEEK_API_KEY")) ?? null;
+  if (entry.id === "gemini") return (await getEnv("GEMINI_API_KEY")) ?? null;
   return null;
 }
 
-function resolveConfig(entry: ChainProvider): ResolvedConfig | null {
-  const apiKey = resolveApiKey(entry);
+async function resolveConfig(entry: ChainProvider): Promise<ResolvedConfig | null> {
+  const apiKey = await resolveApiKey(entry);
   if (!apiKey) return null;
 
   if (entry.type === "custom") {
@@ -172,24 +179,24 @@ function resolveConfig(entry: ChainProvider): ResolvedConfig | null {
     };
   }
 
-  // Builtins
   if (entry.id === "deepseek") {
     return {
       id: "deepseek",
       name: "DeepSeek",
       apiKey,
-      baseUrl: (process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com/v1").replace(/\/+$/, ""),
-      model: process.env.DEEPSEEK_MODEL || "deepseek-chat",
+      baseUrl: ((await getEnv("DEEPSEEK_BASE_URL")) || "https://api.deepseek.com/v1").replace(/\/+$/, ""),
+      model: (await getEnv("DEEPSEEK_MODEL")) || "deepseek-chat",
       api: "openai",
     };
   }
   if (entry.id === "gemini") {
+    const geminiModel = (await getEnv("GEMINI_MODEL")) || "gemini-1.5-flash";
     return {
       id: "gemini",
       name: "Gemini",
       apiKey,
       baseUrl: "https://generativelanguage.googleapis.com/v1beta",
-      model: process.env.GEMINI_MODEL || "gemini-1.5-flash",
+      model: geminiModel,
       api: "gemini",
     };
   }
@@ -327,7 +334,7 @@ export async function callAI(request: AIRequest): Promise<AIResponse> {
 
   for (let i = 0; i < order.length; i++) {
     const entry = order[i];
-    const config = resolveConfig(entry);
+    const config = await resolveConfig(entry);
     if (!config) {
       lastError = `${entry.name}: not configured (missing API key${entry.type === "custom" ? " or baseUrl/model" : ""}).`;
       continue;

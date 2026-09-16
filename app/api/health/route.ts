@@ -3,12 +3,19 @@ import { TOOL_COUNT } from "@/lib/tools/registry";
 import { LAB_COUNT } from "@/lib/labs/registry";
 import { TOOL_LOGIC } from "@/lib/engine/toolLogic";
 import { ANALYZERS } from "@/lib/engine/analyzers";
+import { getEnv } from "@/lib/env/runtime";
 
 export const dynamic = "force-dynamic";
 
-export function GET() {
-  const aiConfigured = Boolean(process.env.DEEPSEEK_API_KEY || process.env.GEMINI_API_KEY);
-  const supabaseConfigured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+export async function GET() {
+  const [deepseekKey, geminiKey] = await Promise.all([
+    getEnv("DEEPSEEK_API_KEY"),
+    getEnv("GEMINI_API_KEY"),
+  ]);
+  const aiConfigured = Boolean(deepseekKey || geminiKey);
+  const supabaseConfigured = Boolean(
+    process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  );
 
   return NextResponse.json({
     name: "auditai-platform",
@@ -29,8 +36,8 @@ export function GET() {
       providerChain: "admin_managed",
       chainKey: "ai_provider_chain (admin_settings → Admin → AI Providers)",
       builtins: {
-        deepseek: Boolean(process.env.DEEPSEEK_API_KEY),
-        gemini: Boolean(process.env.GEMINI_API_KEY),
+        deepseek: Boolean(deepseekKey),
+        gemini: Boolean(geminiKey),
       },
       customProviderCount: "configured in admin settings",
       failover: "automatic on limit/rate/quota errors",

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth/session";
 import { getSupabaseServer } from "@/lib/db/supabase-server";
+import { notifyAdmin } from "@/lib/admin/notify";
 import { getPaymentGatewayConfig } from "@/lib/payments/config";
 import { rateLimit, rateLimitResponse } from "@/lib/ratelimit";
 
@@ -127,6 +128,13 @@ export async function POST(request: Request) {
   if (updateError) {
     return NextResponse.json({ error: updateError.message }, { status: 500 });
   }
+
+  // Admin live-activity notification (best-effort).
+  notifyAdmin({
+    type: "payment_request",
+    summary: `New payment proof: ${user.profile.display_name || user.email || user.id} paid ${config.customCurrency} ${amount} for ${credits} credits (${packageLabel})`,
+    detail: { request_id: paymentRequest.id, amount, credits, user_email: user.email },
+  });
 
   return NextResponse.json(
     { ok: true, requestId: paymentRequest.id, status: "submitted" },

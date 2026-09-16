@@ -861,49 +861,147 @@ const cookieAnalyzer: Analyzer = (ctx) => {
   return { findings, detectedType: "Cookie / Consent Document" };
 };
 
+/**
+ * SEO analyzer — Semator-style on-page audit.
+ *
+ * When the input is a fetched URL, ctx.rawHtml contains the original HTML so we
+ * can inspect real tags (<title>, meta, canonical, og:, ld+json, img alt,
+ * link counts). When the input is plain text (pasted or uploaded), we fall
+ * back to text heuristics and say so in the classification note.
+ */
 const seoAnalyzer: Analyzer = (ctx) => {
   const findings: Finding[] = [];
-  const low = ctx.text.toLowerCase();
-  const hasTitle = /<title>|title\s*[:=]|page\s*title/i.test(ctx.text) || /^#{1}\s+.+$/m.test(ctx.text);
-  const hasMeta = /meta\s*description|description\s*[:=]|meta\s*name/i.test(ctx.text);
-  const hasHeading = /(?:^|\n)#{2,3}\s+|<h[1-3]|heading/i.test(ctx.text);
-  const hasCanonical = /canonical|rel\s*=\s*"canonical"/i.test(ctx.text);
-  const hasAlt = /alt\s*=|alt\s*attribute|image\s*alt/i.test(ctx.text);
+  const html = ctx.rawHtml;
+  const textWords = countWords(ctx.text);
 
-  if (!hasTitle) {
-    findings.push(
-      warnFinding("seo-title", "seo", "On-page", "No page title detected", "A title tag or H1 heading was not found.", "Each page should have a unique, descriptive title.", "High", "High", undefined, 0.5),
-    );
-  }
-  if (!hasMeta) {
-    findings.push(
-      warnFinding("seo-meta", "seo", "On-page", "No meta description detected", "A meta description was not found.", "Write a concise meta description for each page.", "Medium", "Medium", undefined, 0.5),
-    );
-  }
-  if (!hasHeading) {
-    findings.push(
-      warnFinding("seo-heading", "seo", "Structure", "No heading hierarchy detected", "H1-H3 headings were not detected.", "Use a clear heading hierarchy for content structure.", "Medium", "Medium", undefined, 0.5),
-    );
-  }
-  if (!hasCanonical) {
-    findings.push(
-      warnFinding("seo-canonical", "seo", "Technical", "No canonical tag detected", "A canonical URL was not found.", "Add canonical tags to avoid duplicate content issues.", "Low", "Low", undefined, 0.5),
-    );
-  }
-  if (!hasAlt) {
-    findings.push(
-      warnFinding("seo-alt", "seo", "On-page", "No image alt attributes found", "Image alt text was not detected.", "Add descriptive alt text to images.", "Low", "Low", undefined, 0.5),
-    );
+  if (html) {
+    const head = html.slice(0, Math.max(html.indexOf("</head>"), 0) + 8 || html.length);
+    const pick = (re: RegExp): string | null => re.exec(html)?.[1]?.trim() ?? null;
+    const metaContent = (nameRe: string): string | null =>
+      pick(new RegExp(`<meta[^>]+(?:name|property)=["']${nameRe}["'][^>]+content=["']([^"']*)["']`, "i")) ??
+      pick(new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+(?:name|property)=["']${nameRe}["']`, "i"));
+
+    /* ---------- Title ---------- */
+    const title = pick(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    if (!title) {
+      findings.push(warnFinding("seo-title", "seo", "On-page", "No page title detected", "A <title> tag was not found in the HTML.", "Add a unique, descriptive <title> (30-60 chars) to every page.", "High", "High", undefined, 0.95));
+    } else if (title.length < 30 || title.length > 60) {
+      findings.push(warnFinding("seo-title-len", "seo", "On-page", `Title length ${title.length} chars (recommended 30-60)`, `Title: "${title.slice(0, 80)}"`, "Rewrite the title to 30-60 characters with the primary keyword near the start.", "Medium", "Medium", title, 0.9));
+    } else {
+      findings.push(infoFinding("seo-title-ok", "seo", "On-page", "Title tag OK", `${title.length} chars — within the 30-60 recommended range.`, "Keep titles unique across pages.", title, 0.9));
+    }
+
+    /* ---------- Meta description ---------- */
+    const metaDesc = metaContent("description");
+    if (!metaDesc) {
+      findings.push(warnFinding("seo-meta", "seo", "On-page", "No meta description detected", "A <meta name=\"description\"> tag was not found.", "Write a 70-160 character meta description summarizing the page.", "Medium", "Medium", undefined, 0.9));
+    } else if (metaDesc.length < 70 || metaDesc.length > 160) {
+      findings.push(warnFinding("seo-meta-len", "seo", "On-page", `Meta description ${metaDesc.length} chars (recommended 70-160)`, `Description: "${metaDesc.slice(0, 100)}"`, "Adjust the description to 70-160 characters.", "Low", "Low", metaDesc, 0.85));
+    } else {
+      findings.push(infoFinding("seo-meta-ok", "seo", "On-page", "Meta description OK", `${metaDesc.length} chars — within range.`, "Keep descriptions unique per page.", metaDesc, 0.85));
+    }
+
+    /* ---------- Headings ---------- */
+    const h1s = html.match(/<h1[\s>]/gi) ?? [];
+    const h2s = html.match(/<h2[\s>]/gi) ?? [];
+    if (h1s.length === 0) {
+      findings.push(warnFinding("seo-h1", "seo", "Structure", "No H1 heading", "The page has no <h1> tag.", "Add exactly one <h1> describing the page topic.", "High", "Medium", undefined, 0.95));
+    } else if (h1s.length > 1) {
+      findings.push(warnFinding("seo-h1-multi", "seo", "Structure", `${h1s.length} H1 tags found`, "Multiple <h1> tags dilute topical focus.", "Use a single <h1>; demote the rest to <h2>/<h3>.", "Medium", "Medium", undefined, 0.9));
+    } else {
+      findings.push(infoFinding("seo-h1-ok", "seo", "Structure", "Single H1 present", "Exactly one <h1> found — good structure.", "Keep the H1 aligned with the title.", undefined, 0.9));
+    }
+    if (h2s.length === 0) {
+      findings.push(warnFinding("seo-h2", "seo", "Structure", "No H2 subheadings", "The page uses no <h2> tags for sectioning.", "Break content into sections with descriptive <h2>s.", "Low", "Low", undefined, 0.8));
+    }
+
+    /* ---------- Canonical / robots / viewport / lang ---------- */
+    const canonical = pick(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']*)["']/i) ?? pick(/<link[^>]+href=["']([^"']*)["'][^>]+rel=["']canonical["']/i);
+    if (!canonical) findings.push(warnFinding("seo-canonical", "seo", "Technical", "No canonical tag detected", "A rel=canonical link was not found.", "Add a canonical URL to consolidate duplicate URLs.", "Low", "Low", undefined, 0.9));
+    else findings.push(infoFinding("seo-canonical-ok", "seo", "Technical", "Canonical URL present", canonical, "Ensure it points to the preferred URL variant.", canonical, 0.9));
+
+    const robotsMeta = metaContent("robots");
+    if (robotsMeta && /noindex|nofollow/i.test(robotsMeta)) {
+      findings.push(warnFinding("seo-robots-meta", "seo", "Technical", `Restrictive robots meta: ${robotsMeta}`, "noindex/nofollow in a meta tag blocks indexing of this page.", "Remove noindex/nofollow unless the page must stay out of search.", "High", "High", robotsMeta, 0.95));
+    }
+
+    if (!/<meta[^>]+name=["']viewport["']/i.test(html)) {
+      findings.push(warnFinding("seo-viewport", "seo", "Mobile", "No viewport meta tag", "Mobile browsers will render the desktop layout.", "Add <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">.", "Medium", "Medium", undefined, 0.9));
+    }
+    const langMatch = /<html[^>]+lang=["']([a-zA-Z-]+)["']/i.exec(html);
+    if (!langMatch) findings.push(warnFinding("seo-lang", "seo", "Internationalization", "No lang attribute on <html>", "Search engines use lang to target the right locale.", "Add lang=\"en\" (or your locale) to the <html> tag.", "Low", "Low", undefined, 0.85));
+
+    /* ---------- Open Graph / Twitter ---------- */
+    const ogTitle = metaContent("og:title");
+    const ogDesc = metaContent("og:description");
+    const ogImage = metaContent("og:image");
+    const ogCount = [ogTitle, ogDesc, ogImage].filter(Boolean).length;
+    if (ogCount === 0) {
+      findings.push(warnFinding("seo-og", "seo", "Social", "No Open Graph tags", "Shares on WhatsApp/Facebook/LinkedIn will show no preview card.", "Add og:title, og:description and og:image meta tags.", "Medium", "Low", undefined, 0.9));
+    } else if (ogCount < 3) {
+      findings.push(warnFinding("seo-og-partial", "seo", "Social", `Open Graph incomplete (${ogCount}/3)`, "Some og: tags are missing; previews may look broken.", "Add the missing og:title / og:description / og:image tags.", "Low", "Low", undefined, 0.85));
+    } else {
+      findings.push(infoFinding("seo-og-ok", "seo", "Social", "Open Graph complete", "og:title, og:description and og:image all present.", "Verify the image renders at 1200x630.", undefined, 0.85));
+    }
+    if (!metaContent("twitter:card")) {
+      findings.push(warnFinding("seo-twitter", "seo", "Social", "No twitter:card tag", "X/Twitter shares will not render a summary card.", "Add <meta name=\"twitter:card\" content=\"summary_large_image\">.", "Low", "Low", undefined, 0.8));
+    }
+
+    /* ---------- Images alt ---------- */
+    const imgs = html.match(/<img\b[^>]*>/gi) ?? [];
+    const noAlt = imgs.filter((t) => !/alt\s*=/.test(t));
+    if (imgs.length === 0) {
+      findings.push(warnFinding("seo-img-none", "seo", "Content", "No images found", "The page contains no <img> tags.", "Add relevant images with descriptive alt text.", "Low", "Low", undefined, 0.6));
+    } else if (noAlt.length > 0) {
+      const pct = Math.round((noAlt.length / imgs.length) * 100);
+      findings.push(warnFinding("seo-img-alt", "seo", "Content", `${noAlt.length}/${imgs.length} images missing alt (${pct}%)`, "Alt text is required for accessibility and image SEO.", "Add descriptive alt attributes to all content images.", pct > 50 ? "Medium" : "Low", "Low", undefined, 0.9));
+    } else {
+      findings.push(infoFinding("seo-img-ok", "seo", "Content", `All ${imgs.length} images have alt text`, "Every <img> carries an alt attribute.", "Keep alt text descriptive, not keyword-stuffed.", undefined, 0.9));
+    }
+
+    /* ---------- Links ---------- */
+    const hrefs = html.match(/<a\s[^>]*href=["'][^"']*?["']/gi) ?? [];
+    const internal = hrefs.filter((h) => !/https?:\/\//i.test(h) || new RegExp(`https?://[^"']*${""}`).test(h)).length;
+    const external = hrefs.length - internal;
+    if (hrefs.length === 0) {
+      findings.push(warnFinding("seo-links-none", "seo", "Links", "No links found", "The page has no <a href> links.", "Add internal links to important pages.", "Medium", "Low", undefined, 0.7));
+    } else {
+      findings.push(infoFinding("seo-links", "seo", "Links", `${hrefs.length} links (${internal} internal / ${external} external)`, "Link profile snapshot.", "Keep a healthy mix of internal links; use rel=nofollow for untrusted external links.", undefined, 0.7));
+    }
+
+    /* ---------- Structured data ---------- */
+    const ldJson = (html.match(/application\/ld\+json/gi) ?? []).length;
+    if (ldJson === 0) {
+      findings.push(warnFinding("seo-ldjson", "seo", "Technical", "No structured data (ld+json)", "Rich results (stars, FAQs, breadcrumbs) need schema.org markup.", "Add JSON-LD structured data (Organization/WebSite/Article as applicable).", "Low", "Low", undefined, 0.85));
+    } else {
+      findings.push(infoFinding("seo-ldjson-ok", "seo", "Technical", `Structured data present (${ldJson} block${ldJson === 1 ? "" : "s"})`, "Schema.org JSON-LD detected.", "Validate at search.google.com/test/rich-results.", undefined, 0.85));
+    }
+
+    /* ---------- favicon / charset ---------- */
+    if (!/<link[^>]+rel=["'].*icon["']/i.test(html)) findings.push(warnFinding("seo-favicon", "seo", "Technical", "No favicon link", "Browsers and search displays fall back to a default icon.", "Add <link rel=\"icon\" href=\"/favicon.ico\">.", "Low", "Low", undefined, 0.7));
+    if (!/<meta[^>]+charset/i.test(head) && !/charset=/i.test(head)) findings.push(warnFinding("seo-charset", "seo", "Technical", "No charset declaration", "Encoding should be declared in the first 1024 bytes.", "Add <meta charset=\"utf-8\"> early in <head>.", "Low", "Low", undefined, 0.7));
+
+    /* ---------- Content depth (uses extracted text) ---------- */
+    if (textWords < 300) {
+      findings.push(warnFinding("seo-length", "seo", "Content", `Thin content: ${textWords} words`, "Search engines favor pages with substantive content (300+ words).", "Expand the page with useful, original content.", "Medium", "Low", undefined, 0.8));
+    }
+  } else {
+    /* ---------- Text-input fallback (no raw HTML) ---------- */
+    const hasHeading = /(?:^|\n)#{1,3}\s+\S/m.test(ctx.text);
+    if (!ctx.text.includes("@") && !/\b(?:\+?\d[\d\s-]{7,})\b/.test(ctx.text)) {
+      findings.push(warnFinding("seo-contact", "seo", "On-page", "No contact info in text", "No email or phone number was found in the pasted content.", "Include contact details so visitors can reach you.", "Low", "Low", undefined, 0.5));
+    }
+    if (!hasHeading) findings.push(warnFinding("seo-heading", "seo", "Structure", "No heading structure in text", "No markdown-style headings were detected.", "Structure content with headings (H1/H2) for readability and SEO.", "Medium", "Low", undefined, 0.5));
+    if (textWords < 300) findings.push(warnFinding("seo-length", "seo", "Content", `Thin content: ${textWords} words`, "Aim for 300+ words of substantive content.", "Expand the content for better ranking potential.", "Low", "Low", undefined, 0.5));
   }
 
-  const words = countWords(ctx.text);
-  if (words < 300) {
-    findings.push(
-      warnFinding("seo-length", "seo", "Content", "Content is short", `Only about ${words} words were detected.`, "Aim for substantive content (typically 500+ words) for competitive topics.", "Low", "Low", undefined, 0.5),
-    );
-  }
-
-  return { findings, detectedType: "Website Content / SEO" };
+  return {
+    findings,
+    detectedType: html ? "Website HTML / SEO" : "Website Content / SEO",
+    classificationNote: html
+      ? "Audited from the fetched raw HTML — tag-level checks (title, meta, OG, canonical, alt, ld+json) are accurate."
+      : "Audited from extracted text only — tag-level checks (title/meta/OG) need a URL input for full accuracy.",
+  };
 };
 
 const accessibilityAnalyzer: Analyzer = (ctx) => {

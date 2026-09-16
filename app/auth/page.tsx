@@ -3,7 +3,7 @@
 import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ShieldCheck, Loader2, Mail, Lock, User } from "lucide-react";
+import { ShieldCheck, Loader2, Mail, Lock, User, Gift } from "lucide-react";
 import { Container } from "@/components/layout/Container";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -24,12 +24,33 @@ function AuthForm() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  // Invite/coupon code: prefilled from ?invite= (captured by ReferralCapture),
+  // editable so users can also type a friend's code manually.
+  const storedInvite = searchParams.get("invite") ?? searchParams.get("ref") ?? "";
+  const [inviteCode, setInviteCode] = useState(storedInvite.toUpperCase());
+  const [inviteBonus, setInviteBonus] = useState<number | null>(null);
+
   // Redirect if already authenticated
   useEffect(() => {
     if (!loading && user) {
       router.replace(returnTo);
     }
   }, [user, loading, router, returnTo]);
+
+  // Look up the reward for a typed invite code (best-effort).
+  useEffect(() => {
+    const code = inviteCode.trim();
+    if (!code || !/^[A-Za-z0-9]{3,16}$/.test(code)) {
+      setInviteBonus(null);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/growth/referral-info?code=${encodeURIComponent(code)}`)
+      .then((r) => r.json())
+      .then((d) => { if (!cancelled) setInviteBonus(d.valid ? Number(d.bonus_credits) : null); })
+      .catch(() => { if (!cancelled) setInviteBonus(null); });
+    return () => { cancelled = true; };
+  }, [inviteCode]);
 
   if (loading) {
     return (
@@ -80,8 +101,8 @@ function AuthForm() {
         if (mode === "signin") {
           router.replace(returnTo);
         } else {
-          // Apply stored referral code (best-effort, never blocks signup)
-          const refCode = consumeStoredReferral();
+          // Apply the invite/referral code (best-effort, never blocks signup)
+          const refCode = inviteCode.trim() || consumeStoredReferral();
           if (refCode) {
             try {
               await fetch("/api/auth/referral", {
@@ -177,6 +198,26 @@ function AuthForm() {
                 <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
                   {error}
                 </div>
+              )}
+
+              {mode === "signup" && (
+                <Field label="Invite / coupon code (optional)">
+                  <div className="relative">
+                    <Gift className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      type="text"
+                      placeholder="Enter a friend's code or coupon"
+                      value={inviteCode}
+                      onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+                      className="pl-10"
+                    />
+                  </div>
+                  {inviteBonus !== null && (
+                    <p className="mt-1.5 text-xs text-success">
+                      🎉 Valid code — you&apos;ll get {inviteBonus} extra bonus credits when you sign up!
+                    </p>
+                  )}
+                </Field>
               )}
 
               {mode === "signup" && !error && (

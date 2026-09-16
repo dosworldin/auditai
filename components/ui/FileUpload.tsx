@@ -84,25 +84,12 @@ export function FileUpload({
   }
 
   return (
-    <button
-      type="button"
-      onClick={() => inputRef.current?.click()}
-      onDragOver={(e) => {
-        e.preventDefault();
-        setDragOver(true);
-      }}
-      onDragLeave={() => setDragOver(false)}
-      onDrop={(e) => {
-        e.preventDefault();
-        setDragOver(false);
-        handleFiles(e.dataTransfer.files);
-      }}
-      className={cn(
-        "flex w-full flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border bg-card text-muted-foreground transition-colors hover:border-ring/70 hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        compact ? "px-4 py-6" : "px-6 py-12",
-        dragOver && "border-primary bg-accent/30",
-      )}
-    >
+    <>
+      {/* Hidden input is a SIBLING of the clickable dropzone, never a child.
+          When the input lives inside the clickable element, input.click()
+          bubbles back up and re-triggers the handler, instantly opening and
+          cancelling the file dialog — uploads silently broke in Safari/Firefox
+          and intermittently in Chrome (Document Q&A "upload not working"). */}
       <input
         ref={inputRef}
         type="file"
@@ -110,21 +97,49 @@ export function FileUpload({
         accept={accept}
         onChange={(e) => handleFiles(e.target.files)}
       />
-      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent text-accent-foreground">
-        <UploadCloud className="h-5 w-5" />
+      <div
+        onClick={() => inputRef.current?.click()}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          handleFiles(e.dataTransfer.files);
+        }}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            inputRef.current?.click();
+          }
+        }}
+        aria-label="Upload a file"
+        className={cn(
+          "flex w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border bg-card text-muted-foreground transition-colors hover:border-ring/70 hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          compact ? "px-4 py-6" : "px-6 py-12",
+          dragOver && "border-primary bg-accent/30",
+        )}
+      >
+        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent text-accent-foreground">
+          <UploadCloud className="h-5 w-5" />
+        </div>
+        <div className="text-center">
+          <p className="text-sm font-medium text-foreground">
+            Click to upload or drag and drop
+          </p>
+          <p className="mt-0.5 text-xs">
+            {allowedKinds
+              ? `Supported: ${allowedKinds.map((k) => k.toUpperCase()).join(", ")}`
+              : accept
+                ? `Accepted formats: ${accept}`
+                : "PDF, DOCX, TXT, images and more"}
+          </p>
+        </div>
       </div>
-      <div className="text-center">
-        <p className="text-sm font-medium text-foreground">
-          Click to upload or drag and drop
-        </p>
-        <p className="mt-0.5 text-xs">
-          {allowedKinds
-            ? `Supported: ${allowedKinds.map((k) => k.toUpperCase()).join(", ")}`
-            : accept
-              ? `Accepted formats: ${accept}`
-              : "PDF, DOCX, TXT, images and more"}
-        </p>
-      </div>
-    </button>
+    </>
   );
 }

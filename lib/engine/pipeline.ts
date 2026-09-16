@@ -15,7 +15,7 @@ import {
   sortFindings,
   summarizeReport,
 } from "@/lib/engine/report";
-import { countWords } from "@/lib/engine/text";
+import { countWords, splitLines } from "@/lib/engine/text";
 
 function toolNameFor(slug: string): string {
   const map: Record<string, string> = {
@@ -107,7 +107,57 @@ export async function runAudit(payload: AuditRunPayload): Promise<AuditReport> {
 
   const extraction: ExtractionResult = await extractForAudit(payload);
   const text = extraction.text;
+
+  // HARD GUARD: if extraction produced no usable text, do NOT run rules —
+  // absence rules on an empty document generate bogus findings ("No contact
+  // details", "Resume is very short") that destroy user trust. This happened
+  // when a PDF's text layer failed to parse and the catch branch returned
+  // empty text. Instead, fail loudly with an actionable message.
+  if (countWords(text) < 10) {
+    const why = extraction.ocrNotice
+      ? extraction.ocrNotice
+      : extraction.sourceDescription.includes("could not") ||
+          extraction.sourceDescription.includes("failed")
+        ? `${extraction.sourceDescription}. Re-export the file (e.g. "Save as PDF" from Word/Docs) or paste the text directly.`
+        : "The uploaded file contained no readable text. Re-export it as a text-based file or paste the content directly.";
+    return {
+      toolSlug: payload.toolSlug,
+      toolName: toolNameFor(payload.toolSlug),
+      status: "error",
+      error: why,
+      generatedAt: new Date().toISOString(),
+      documentName: payload.documentName ?? extraction.sourceDescription,
+      safetyDomain: logic.safetyDomain,
+      phase: "logic-v1",
+      summary: `No readable text could be extracted from the document, so no analysis was performed. ${why}`,
+      riskScore: 0,
+      riskLabel: "Low",
+      criticalFindings: [],
+      findings: [],
+      evidenceList: [],
+      recommendations: [],
+      missingInformation: [],
+      documentStats: {
+        characters: text.length,
+        words: countWords(text),
+        lines: splitLines(text).length,
+        estimatedReadTimeSeconds: 0,
+        inputType: extraction.inputType,
+        usedOcr: extraction.usedOcr,
+        ocrRequired: extraction.ocrRequired,
+        truncated: extraction.truncated,
+      },
+      confidence: { overall: 0, notes: ["Extraction failed — no analysis performed."] },
+      disclaimer: SAFETY_DISCLAIMERS[logic.safetyDomain],
+      ocrNotice: extraction.ocrNotice,
+    };
+  }
+
   const ctx = contextFrom(text);
+  // Pass raw HTML through for tag-level analyzers (SEO, accessibility, privacy).
+  // stripHtml() destroys <title>/meta/canonical/alt info, so without this those
+  // checks always reported "missing" even on well-formed pages.
+  if (extraction.rawHtml) ctx.rawHtml = extraction.rawHtml;
 
   const ruleFindings: Finding[] = [];
   for (const rule of logic.checks) {
@@ -117,7 +167,6 @@ export async function runAudit(payload: AuditRunPayload): Promise<AuditReport> {
       // a single broken rule must not fail the whole audit
     }
   }
-
   let analyzerFindings: Finding[] = [];
   let detectedType: string | undefined;
   let classificationNote: string | undefined;

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth/session";
 import { getSupabaseServer } from "@/lib/db/supabase-server";
+import { notifyAdmin } from "@/lib/admin/notify";
 
 export const dynamic = "force-dynamic";
 
@@ -158,6 +159,13 @@ export async function POST(request: Request) {
       pending_balance: (wallet.available_balance - amount + amount),
     })
     .eq("user_id", user.id);
+
+  // Admin live-activity notification (best-effort).
+  notifyAdmin({
+    type: "payout_request",
+    summary: `Payout request: ${user.profile.display_name || user.email || user.id} wants $${amount} via ${method}`,
+    detail: { amount, method, user_email: user.email },
+  });
 
   return NextResponse.json({ ok: true, message: "Payout request submitted" });
 }

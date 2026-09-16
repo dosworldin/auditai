@@ -6,6 +6,8 @@
  * relying on Supabase Auth's built-in emails keep working.
  */
 
+import { getEnv } from "@/lib/env/runtime";
+
 const RESEND_API_URL = "https://api.resend.com/emails";
 
 export interface SendEmailResult {
@@ -24,12 +26,12 @@ export interface SendEmailOptions {
   replyTo?: string;
 }
 
-function defaultFrom(): string {
-  return process.env.RESEND_FROM_EMAIL || "AuditAI <onboarding@resend.dev>";
+async function defaultFrom(): Promise<string> {
+  return (await getEnv("RESEND_FROM_EMAIL")) || "AuditAI <onboarding@resend.dev>";
 }
 
-async function sendEmail(options: SendEmailOptions): Promise<SendEmailResult> {
-  const apiKey = process.env.RESEND_API_KEY;
+export async function sendEmail(options: SendEmailOptions): Promise<SendEmailResult> {
+  const apiKey = await getEnv("RESEND_API_KEY");
   if (!apiKey) {
     return { ok: false, error: "RESEND_API_KEY not configured" };
   }
@@ -42,7 +44,7 @@ async function sendEmail(options: SendEmailOptions): Promise<SendEmailResult> {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: options.from ?? defaultFrom(),
+        from: options.from ?? (await defaultFrom()),
         to: [options.to],
         subject: options.subject,
         html: options.html,
@@ -194,7 +196,7 @@ export async function sendStorybookReadyEmail(options: {
   childName: string;
   storyTitle: string;
 }): Promise<SendEmailResult> {
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "";
+  const siteUrl = (await getEnv("NEXT_PUBLIC_SITE_URL")) ?? "";
   const body = `
     <p style="margin:0 0 12px;">The personalized storybook for
       <strong>${escapeHtml(options.childName)}</strong> is ready! 🎉</p>

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Coins, CreditCard, Loader2, Wallet } from "lucide-react";
+import { Coins, CreditCard, Loader2, Wallet, Gift, Copy, Check, Share2 } from "lucide-react";
 import { Container } from "@/components/layout/Container";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader } from "@/components/ui/Card";
@@ -40,6 +40,37 @@ export default function WalletPage() {
   const [topUp, setTopUp] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loadingTx, setLoadingTx] = useState(true);
+  const [copied, setCopied] = useState(false);
+
+  const referralCode = (profile as unknown as { referral_code?: string } | null)?.referral_code ?? "";
+  const inviteUrl = referralCode
+    ? `${window.location.origin}/auth?invite=${encodeURIComponent(referralCode)}`
+    : "";
+
+  const copyInvite = async () => {
+    if (!inviteUrl) return;
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // clipboard unavailable
+    }
+  };
+
+  const shareInvite = async () => {
+    if (!inviteUrl) return;
+    const text = `Join me on AuditAI with my invite link and get bonus credits when you sign up! ${inviteUrl}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: "AuditAI Invite", text, url: inviteUrl });
+        return;
+      } catch {
+        // user dismissed — fall back to copy
+      }
+    }
+    copyInvite();
+  };
 
   // Load runtime pricing from admin settings (server API keeps source of truth).
   useEffect(() => {
@@ -199,6 +230,37 @@ export default function WalletPage() {
               ) : (
                 <CardContent className="text-sm text-muted-foreground">No transactions yet.</CardContent>
               )}
+            </Card>
+
+            <Card>
+              <CardHeader
+                title="Invite & Earn"
+                subtitle="Share your link — they get bonus credits, you get a reward when they sign up."
+              />
+              <CardContent className="space-y-3">
+                {referralCode ? (
+                  <>
+                    <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2">
+                      <Gift className="h-4 w-4 shrink-0 text-primary" />
+                      <code className="flex-1 truncate font-mono text-sm font-semibold text-foreground">{referralCode}</code>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" className="flex-1" onClick={copyInvite} disabled={!inviteUrl}>
+                        {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
+                        {copied ? "Copied!" : "Copy link"}
+                      </Button>
+                      <Button variant="outline" size="sm" className="flex-1" onClick={shareInvite} disabled={!inviteUrl}>
+                        <Share2 className="h-4 w-4" /> Share
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Anyone who signs up through your link gets extra welcome credits — and you get credits too.
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Your invite link will appear here after your profile loads.</p>
+                )}
+              </CardContent>
             </Card>
 
             <Card>

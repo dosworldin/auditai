@@ -7,8 +7,11 @@
  *                          (Character Reference) — Leonardo Phoenix (SDXL family)
  *  3. pollGeneration()   → GET /generations/{id} until COMPLETE, returns image URLs
  *
- * Key: LEONARDO_API_KEY env var.
+ * Key: LEONARDO_API_KEY — resolved via lib/env/runtime (admin Credentials tab
+ * first, then the deployment env var).
  */
+
+import { getEnv } from "@/lib/env/runtime";
 
 const LEONARDO_BASE = "https://cloud.leonardo.ai/api/rest/v1";
 
@@ -27,9 +30,9 @@ export interface GeneratedImages {
   imageUrls: string[];
 }
 
-function getApiKey(): string {
-  const key = process.env.LEONARDO_API_KEY;
-  if (!key) throw new Error("LEONARDO_API_KEY is not configured");
+async function getApiKey(): Promise<string> {
+  const key = await getEnv("LEONARDO_API_KEY");
+  if (!key) throw new Error("LEONARDO_API_KEY is not configured (Admin → Credentials or env)");
   return key;
 }
 
@@ -37,11 +40,12 @@ async function leonardoFetch(
   path: string,
   init?: RequestInit,
 ): Promise<Record<string, unknown>> {
+  const apiKey = await getApiKey();
   const res = await fetch(`${LEONARDO_BASE}${path}`, {
     ...init,
     headers: {
       accept: "application/json",
-      authorization: `Bearer ${getApiKey()}`,
+      authorization: `Bearer ${apiKey}`,
       ...(init?.body ? { "content-type": "application/json" } : {}),
       ...(init?.headers as Record<string, string> | undefined),
     },

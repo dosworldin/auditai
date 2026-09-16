@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { getSupabaseAdmin } from "@/lib/db/supabase-server";
+import { getEnv } from "@/lib/env/runtime";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,7 @@ export const dynamic = "force-dynamic";
  * even between polls.
  */
 export async function POST(request: Request) {
-  const secret = process.env.POD_WEBHOOK_SECRET;
+  const secret = await getEnv("POD_WEBHOOK_SECRET");
   if (!secret) {
     return NextResponse.json({ error: "POD webhook not configured" }, { status: 503 });
   }

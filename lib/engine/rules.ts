@@ -5,6 +5,8 @@ export interface RuleContext {
   text: string;
   lines: string[];
   sentences: string[];
+  /** Raw HTML for URL inputs (before stripHtml) — used by SEO-type analyzers. */
+  rawHtml?: string;
   pages?: number;
 }
 

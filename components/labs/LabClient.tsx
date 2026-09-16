@@ -17,6 +17,7 @@ import { Field, Input, Textarea } from "@/components/ui/Field";
 import { ConfigForm, useConfigValues } from "@/components/tools/ConfigForm";
 import { ProgressBar } from "@/components/ui/Feedback";
 import { LabOutputView } from "@/components/labs/LabOutputView";
+import { RescuePanel } from "@/components/labs/RescuePanel";
 
 type LabMode = "upload" | "text" | "url";
 
@@ -245,6 +246,18 @@ export function LabClient({ lab }: { lab: LabDefinition }) {
               </div>
             </CardContent>
           </Card>
+        ) : null}
+
+        {/* Rescue delivery for social-escape-assistant: the script must reach
+            the user where they are — SMS, email, scheduled message, or a live
+            fake incoming call. A plain text block is useless mid-situation. */}
+        {output && lab.slug === "social-escape-assistant" && user ? (
+          <RescuePanel
+            script={
+              output.findings.find((f) => f.copiableText)?.copiableText ?? output.summary
+            }
+            situation={String(output.metrics.situation ?? "")}
+          />
         ) : null}
 
         {output ? (

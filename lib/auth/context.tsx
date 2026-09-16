@@ -13,6 +13,7 @@ export interface AuthProfile {
   credits: number;
   plan: string;
   is_suspended: boolean;
+  referral_code?: string | null;
 }
 
 interface AuthState {
@@ -49,7 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const supabase = getSupabaseBrowser();
       const { data } = await supabase
         .from("profiles")
-        .select("id, email, display_name, role, avatar_url, country, credits, plan, is_suspended")
+        .select("id, email, display_name, role, avatar_url, country, credits, plan, is_suspended, referral_code")
         .eq("id", userId)
         .single();
       if (data) {

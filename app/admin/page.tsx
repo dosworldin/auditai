@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { Activity, FlaskConical, LayoutGrid, ServerCog, ShieldCheck, Table2, Settings, Loader2, Wallet, CheckCircle2, XCircle, ExternalLink, Users, LifeBuoy, ListChecks, Banknote, Bot, ArrowUp, ArrowDown, Trash2, Plus, BookOpen } from "lucide-react";
+import { Activity, FlaskConical, LayoutGrid, ServerCog, ShieldCheck, Table2, Settings, Loader2, Wallet, CheckCircle2, XCircle, ExternalLink, Users, LifeBuoy, ListChecks, Banknote, Bot, ArrowUp, ArrowDown, Trash2, Plus, BookOpen, KeyRound, Gift } from "lucide-react";
 import { Container } from "@/components/layout/Container";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader } from "@/components/ui/Card";
@@ -17,6 +17,8 @@ import { useAuth } from "@/lib/auth/context";
 import { TOOL_REGISTRY } from "@/lib/tools/registry";
 import { LAB_REGISTRY } from "@/lib/labs/registry";
 import { PROCESSING_DECISIONS } from "@/lib/processing/blueprint";
+import { CredentialsPanel } from "@/components/admin/CredentialsPanel";
+import { GrowthPanel } from "@/components/admin/GrowthPanel";
 
 interface SettingsGroup { [key: string]: unknown; }
 interface SettingsData { [category: string]: SettingsGroup; }
@@ -63,11 +65,16 @@ function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (
 }
 
 const defaultSettings: SettingsData = {
-  general: { platform_name: "AuditAI", maintenance_mode: false },
+  general: {
+    platform_name: "AuditAI",
+    maintenance_mode: false,
+    admin_notify_email: "" as unknown,
+    admin_notify_enabled: true,
+  },
   ai: { ai_provider_chain: [
     { id: "deepseek", name: "DeepSeek", type: "builtin", enabled: true },
   ] as unknown[] },
-  billing: { credit_value: 0.10, credit_packs: [] as unknown[] },
+  billing: { credit_value: 0.10, credit_packs: [] as unknown[], signup_bonus_credits: 100, rescue_sms_credits: 1, rescue_email_credits: 0 },
   promotion: { promotion_enabled: true, promotion_uses_per_tool: 1 },
   tools: { tool_prices: {}, disabled_tools: {} },
   labs: { lab_prices: {} },
@@ -137,6 +144,51 @@ export default function AdminPage() {
   const [sbOrders, setSbOrders] = useState<StorybookOrderRow[]>([]);
   const [sbLoading, setSbLoading] = useState(false);
 
+  // Live activity (unread badges + overview feed) — polled every 15s
+  interface ActivityEvent { id: string; event_type: string; summary: string; created_at: string; }
+  const [activity, setActivity] = useState<{ recent: ActivityEvent[]; counts: Record<string, number>; totalUnread: number }>({
+    recent: [], counts: {}, totalUnread: 0,
+  });
+  const seenAtRef = useRef<string>(new Date().toISOString());
+  const loadActivity = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/admin/activity?since=${encodeURIComponent(seenAtRef.current)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setActivity({
+          recent: data.recent ?? [],
+          counts: data.counts ?? {},
+          totalUnread: data.total_unread ?? 0,
+        });
+      }
+    } catch { /* ignore polling errors */ }
+  }, []);
+
+  useEffect(() => {
+    if (!authReady) return;
+    loadActivity();
+    const t = setInterval(loadActivity, 15000);
+    return () => clearInterval(t);
+  }, [authReady, loadActivity]);
+
+  // Opening a tab "reads" its events: move the seen-marker forward so its
+  // badge clears, and refresh counts immediately.
+  const markTabSeen = (eventTypes: string[]) => {
+    seenAtRef.current = new Date().toISOString();
+    setActivity((prev) => {
+      const counts = { ...prev.counts };
+      let totalUnread = prev.totalUnread;
+      for (const t of eventTypes) {
+        totalUnread -= counts[t] ?? 0;
+        delete counts[t];
+      }
+      return { ...prev, counts, totalUnread: Math.max(0, totalUnread) };
+    });
+  };
+
+  const badgeFor = (types: string[]) =>
+    types.reduce((sum, t) => sum + (activity.counts[t] ?? 0), 0);
+
   const loadStorybookOrders = useCallback(async () => {
     setSbLoading(true);
     try {
@@ -152,6 +204,7 @@ export default function AdminPage() {
   useEffect(() => {
     if (!authReady || tab !== "storybook") return;
     loadStorybookOrders();
+    markTabSeen(["storybook_order"]);
   }, [authReady, tab, loadStorybookOrders]);
 
   const loadSettings = useCallback(async () => {
@@ -212,6 +265,7 @@ export default function AdminPage() {
   useEffect(() => {
     if (!authReady || tab !== "payments") return;
     loadPayments();
+    markTabSeen(["payment_request"]);
   }, [authReady, tab, loadPayments]);
 
   // --- AI provider chain state ---
@@ -361,6 +415,7 @@ export default function AdminPage() {
   useEffect(() => {
     if (!authReady || tab !== "users") return;
     loadUsers();
+    markTabSeen(["signup"]);
   }, [authReady, tab, loadUsers]);
 
   const updateUser = async (userId: string, updates: Record<string, unknown>) => {
@@ -430,6 +485,7 @@ export default function AdminPage() {
   useEffect(() => {
     if (!authReady || tab !== "support") return;
     loadTickets();
+    markTabSeen(["support_ticket"]);
   }, [authReady, tab, loadTickets]);
 
   const loadRequests = useCallback(async () => {
@@ -464,6 +520,7 @@ export default function AdminPage() {
   useEffect(() => {
     if (!authReady || tab !== "payouts") return;
     loadPayouts();
+    markTabSeen(["payout_request"]);
   }, [authReady, tab, loadPayouts]);
 
   const reviewPayout = async (payoutId: string, action: "approve" | "reject" | "mark_paid") => {
@@ -544,15 +601,17 @@ export default function AdminPage() {
             items={[
               { id: "overview", label: "Overview", icon: <Activity className="h-4 w-4" /> },
               { id: "settings", label: "Settings", icon: <Settings className="h-4 w-4" /> },
+              { id: "credentials", label: "Credentials", icon: <KeyRound className="h-4 w-4" /> },
               { id: "ai", label: "AI Providers", icon: <Bot className="h-4 w-4" /> },
-              { id: "payments", label: "Payments", icon: <Wallet className="h-4 w-4" /> },
-              { id: "payouts", label: "Payouts", icon: <Banknote className="h-4 w-4" /> },
-              { id: "users", label: "Users", icon: <Users className="h-4 w-4" /> },
-              { id: "support", label: "Support", icon: <LifeBuoy className="h-4 w-4" /> },
-              { id: "requests", label: "Requests", icon: <ListChecks className="h-4 w-4" /> },
+              { id: "payments", label: "Payments", icon: <Wallet className="h-4 w-4" />, badge: badgeFor(["payment_request"]), badgeTone: "alert" },
+              { id: "payouts", label: "Payouts", icon: <Banknote className="h-4 w-4" />, badge: badgeFor(["payout_request"]), badgeTone: "alert" },
+              { id: "users", label: "Users", icon: <Users className="h-4 w-4" />, badge: badgeFor(["signup"]) },
+              { id: "growth", label: "Growth", icon: <Gift className="h-4 w-4" />, badge: badgeFor(["referral_join"]) },
+              { id: "support", label: "Support", icon: <LifeBuoy className="h-4 w-4" />, badge: badgeFor(["support_ticket"]), badgeTone: "alert" },
+              { id: "requests", label: "Requests", icon: <ListChecks className="h-4 w-4" />, badge: badgeFor(["audit_run", "lab_run"]) },
               { id: "tools", label: "Tools", icon: <LayoutGrid className="h-4 w-4" /> },
               { id: "labs", label: "Labs", icon: <FlaskConical className="h-4 w-4" /> },
-              { id: "storybook", label: "Storybooks", icon: <BookOpen className="h-4 w-4" /> },
+              { id: "storybook", label: "Storybooks", icon: <BookOpen className="h-4 w-4" />, badge: badgeFor(["storybook_order"]) },
               { id: "processing", label: "Processing", icon: <ServerCog className="h-4 w-4" /> },
             ]}
           />
@@ -560,6 +619,41 @@ export default function AdminPage() {
 
         {tab === "overview" && (
           <div className="space-y-6">
+            {/* Live activity feed — last 24h platform events */}
+            <Card>
+              <CardHeader
+                title="Live activity"
+                subtitle="Last 24 hours · auto-refreshes every 15s"
+                icon={<Activity className="h-5 w-5" />}
+                actions={
+                  activity.totalUnread > 0 ? (
+                    <Badge tone="destructive">{activity.totalUnread} new</Badge>
+                  ) : (
+                    <Badge tone="success">All caught up</Badge>
+                  )
+                }
+              />
+              <CardContent>
+                {activity.recent.length === 0 ? (
+                  <p className="py-4 text-center text-sm text-muted-foreground">No platform activity in the last 24 hours.</p>
+                ) : (
+                  <div className="divide-y divide-border">
+                    {activity.recent.slice(0, 12).map((ev) => (
+                      <div key={ev.id} className="flex items-start gap-3 py-2.5">
+                        <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-accent" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm">{ev.summary}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(ev.created_at).toLocaleString()} · {ev.event_type.replace(/_/g, " ")}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {platformStats.map((stat) => (
                 <Card key={stat.label}>
@@ -578,6 +672,9 @@ export default function AdminPage() {
           </div>
         )}
 
+        {tab === "credentials" && <CredentialsPanel />}
+        {tab === "growth" && <GrowthPanel />}
+
         {tab === "settings" && (
           <div className="space-y-6">
             {loading ? (
@@ -594,6 +691,82 @@ export default function AdminPage() {
                         onBlur={() => saveSetting("platform_name", settings.general?.platform_name)}
                       />
                     </Field>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader
+                    title="Signup Bonus Credits"
+                    subtitle="Welcome credits granted automatically to every new user at signup. Takes effect immediately for new signups."
+                  />
+                  <CardContent>
+                    <Field label="Signup bonus (credits)">
+                      <Input
+                        type="number"
+                        min={0}
+                        value={String(settings.billing?.signup_bonus_credits ?? 100)}
+                        onChange={(e) => updateSetting("billing", "signup_bonus_credits", Number(e.target.value))}
+                        onBlur={() => saveSetting("signup_bonus_credits", settings.billing?.signup_bonus_credits)}
+                      />
+                    </Field>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader
+                    title="Social Escape — Rescue Delivery"
+                    subtitle="SMS/call/email delivery of exit scripts. SMS + fake-call need Twilio credentials in Admin → Credentials."
+                  />
+                  <CardContent className="space-y-4">
+                    <Field label="Credits per SMS/call (0 = free)">
+                      <Input
+                        type="number"
+                        min={0}
+                        value={String(settings.billing?.rescue_sms_credits ?? 1)}
+                        onChange={(e) => updateSetting("billing", "rescue_sms_credits", Number(e.target.value))}
+                        onBlur={() => saveSetting("rescue_sms_credits", settings.billing?.rescue_sms_credits)}
+                      />
+                    </Field>
+                    <Field label="Credits per email (0 = free)">
+                      <Input
+                        type="number"
+                        min={0}
+                        value={String(settings.billing?.rescue_email_credits ?? 0)}
+                        onChange={(e) => updateSetting("billing", "rescue_email_credits", Number(e.target.value))}
+                        onBlur={() => saveSetting("rescue_email_credits", settings.billing?.rescue_email_credits)}
+                      />
+                    </Field>
+                    <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+                      Twilio env keys: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER —
+                      set them in Admin → Credentials (live, no redeploy needed).
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader
+                    title="Activity Notification Emails"
+                    subtitle="Get an email on your admin address whenever something important happens: new signup, support ticket, payout request, payment proof, storybook order, referral join."
+                  />
+                  <CardContent className="space-y-4">
+                    <Field label="Notification email" help="Leave empty to disable email notifications.">
+                      <Input
+                        type="email"
+                        placeholder="you@yourdomain.com"
+                        value={String(settings.general?.admin_notify_email ?? "")}
+                        onChange={(e) => updateSetting("general", "admin_notify_email", e.target.value)}
+                        onBlur={() => saveSetting("admin_notify_email", settings.general?.admin_notify_email)}
+                      />
+                    </Field>
+                    <label className="flex cursor-pointer items-center gap-3 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={settings.general?.admin_notify_enabled !== false}
+                        onChange={(e) => {
+                          updateSetting("general", "admin_notify_enabled", e.target.checked);
+                          saveSetting("admin_notify_enabled", e.target.checked);
+                        }}
+                        className="h-4 w-4 rounded border-border"
+                      />
+                      Send activity emails (master switch)
+                    </label>
                   </CardContent>
                 </Card>
                 <Card>
