@@ -7,6 +7,8 @@ import { getTool } from "@/lib/tools/registry";
 import { getEffectiveToolLogic, isAiEnabledFor, aiMaxFindingsFor, aiContextFor, semanticLayerEnabled, TOOL_LOGIC_MIGRATED } from "@/lib/engine/migratedLogic";
 import { runLabAdapter } from "@/lib/engine/migratedAdapter";
 import { runSemanticAnalysis } from "@/lib/ai/semantic";
+import { callAI } from "@/lib/ai/provider";
+import { isEnglish, languageInstruction } from "@/lib/ai/language";
 import { extractSplitDocuments } from "@/lib/engine/comparison";
 import {
   buildDocStats,
@@ -21,6 +23,11 @@ import {
   summarizeReport,
 } from "@/lib/engine/report";
 import { countWords, splitLines } from "@/lib/engine/text";
+
+const LOCALIZE_REPORT_SYSTEM = `You localize audit reports for a multilingual document-analysis product.
+
+Input: JSON with the original English report (and an input document excerpt for context).
+Task: return ONLY a JSON object with the SAME shape and keys, with every user-facing string (summary, finding title/explanation/recommendation, recommendation texts) rewritten in the requested language. Preserve meaning, urgency and tone exactly — a Critical finding must still read like one. Do NOT add, remove, merge or reorder findings; do NOT change severities, scores, numbers, dates or amounts. Keep proper nouns, product names, technical identifiers and code as-is. Never answer with anything except the JSON object.`;
 
 function toolNameFor(slug: string): string {
   const map: Record<string, string> = {
@@ -139,7 +146,8 @@ export async function runAudit(payload: AuditRunPayload): Promise<AuditReport> {
   // semantic layer still enhances them (shared with the classic path below).
   if (payload.toolSlug in TOOL_LOGIC_MIGRATED) {
     const adapted = await runLabAdapter(payload);
-    return enhanceWithSemantic(adapted, payload, adapted.__extracted ?? "");
+    const enhanced = await enhanceWithSemantic(adapted, payload, adapted.__extracted ?? "");
+    return maybeLocalizeReport(enhanced, payload);
   }
 
   const logic = getEffectiveToolLogic(payload.toolSlug);
@@ -271,7 +279,110 @@ export async function runAudit(payload: AuditRunPayload): Promise<AuditReport> {
     detectedType,
     classificationNote,
   });
-  return enhanceWithSemantic(report, payload, text, ctx);
+  const enhanced = await enhanceWithSemantic(report, payload, text, ctx);
+  return maybeLocalizeReport(enhanced, payload);
+}
+
+/** When the user explicitly selected a non-English report language, rewrite
+ * the deterministic English report skeleton into that language (semantic AI
+ * findings are already generated in the target language). */
+async function maybeLocalizeReport(report: AuditReport, payload: AuditRunPayload): Promise<AuditReport> {
+  const selected =
+    typeof payload.config?.language === "string" ? payload.config.language.toLowerCase() : "";
+  if (!selected || isEnglish(selected)) return report;
+  return localizeReport(report, selected);
+}
+
+/**
+ * Localize an AuditReport into the requested output language (ONE AI call).
+ * The deterministic engine's English strings (summary, findings,
+ * recommendations, missing-info) are rewritten; severities, scores, metrics
+ * and evidence quotes stay authoritative and untouched. Fail-soft: on any AI
+ * failure the English report is returned so an audit never breaks.
+ */
+async function localizeReport(report: AuditReport, language: string): Promise<AuditReport> {
+  const instruction = languageInstruction(language);
+  if (!instruction) return report;
+  try {
+    const response = await callAI({
+      systemPrompt: `${LOCALIZE_REPORT_SYSTEM}\n\nLANGUAGE: ${instruction}`,
+      prompt: `Localize this audit report (input document excerpt is reference only — do not include it in the response):
+INPUT DOCUMENT EXCERPT:
+"""
+${report.documentName ?? ""}
+"""
+REPORT:
+${JSON.stringify(
+  {
+    summary: report.summary,
+    findings: report.findings.map((f) => ({
+      title: f.title,
+      explanation: f.explanation,
+      recommendation: f.recommendation,
+    })),
+    recommendations: report.recommendations.map((r) => ({ text: r.text })),
+    missingInformation: report.missingInformation.map((m) => ({
+      item: m.item,
+      explanation: m.explanation,
+    })),
+  },
+  null,
+  0,
+)}
+
+Return the localized JSON object with keys "summary", "findings" (same array order, same fields) and "recommendations". Return ONLY the JSON object.`,
+      temperature: 0.2,
+      maxTokens: 2400,
+    });
+    if (response.error || !response.content.trim()) return report;
+
+    const fenced = response.content.match(/```(?:json)?\s*([\s\S]*?)```/);
+    const candidate = (fenced ? fenced[1] : response.content).trim();
+    const start = candidate.indexOf("{");
+    const end = candidate.lastIndexOf("}");
+    if (start === -1 || end <= start) return report;
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(candidate.slice(start, end + 1));
+    } catch {
+      return report;
+    }
+
+    const pick = (v: unknown, fallback: string) =>
+      typeof v === "string" && v.trim() ? v.trim() : fallback;
+    const localizedFindings = Array.isArray(parsed.findings) ? parsed.findings : [];
+    const localizedRecs = Array.isArray(parsed.recommendations) ? parsed.recommendations : [];
+
+    const findings = report.findings.map((f, i) => {
+      const l =
+        typeof localizedFindings[i] === "object" && localizedFindings[i] !== null
+          ? (localizedFindings[i] as Record<string, unknown>)
+          : null;
+      if (!l) return f;
+      return {
+        ...f,
+        title: pick(l.title, f.title),
+        explanation: pick(l.explanation, f.explanation),
+        recommendation: pick(l.recommendation, f.recommendation),
+      };
+    });
+    const recommendations = report.recommendations.map((r, i) => {
+      const l =
+        typeof localizedRecs[i] === "object" && localizedRecs[i] !== null
+          ? (localizedRecs[i] as Record<string, unknown>)
+          : null;
+      return l ? { ...r, text: pick(l.text, r.text) } : r;
+    });
+
+    return {
+      ...report,
+      summary: pick(parsed.summary, report.summary),
+      findings,
+      recommendations,
+    };
+  } catch {
+    return report;
+  }
 }
 
 /**
@@ -300,6 +411,7 @@ async function enhanceWithSemantic(
       safetyDomain: report.safetyDomain,
       maxFindings: aiMaxFindingsFor(payload.toolSlug),
       language: typeof payload.config?.language === "string" ? payload.config.language : undefined,
+      inputPreview: text.slice(0, 2000),
     });
     if (semantic && semantic.findings.length > 0) {
       const merged = [...clean.findings, ...semantic.findings].sort((a, b) => {

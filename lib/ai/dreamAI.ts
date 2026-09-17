@@ -17,6 +17,7 @@
  */
 
 import { callAI } from "@/lib/ai/provider";
+import { AUTO_MIRROR_RULE, isEnglish, languageInstruction } from "@/lib/ai/language";
 
 /* ------------------------------------------------------------------ */
 /*  Shared JSON parsing                                                */
@@ -75,11 +76,22 @@ Respond with ONLY a JSON object:
 }
 If sufficient: followUpQuestions and missing must be empty arrays.
 If insufficient: ask 1-3 concise follow-up questions, only about what is ACTUALLY missing, phrased for the dreamer.
-Never interrogate about identity, real names, or private medical information.`;
+Never interrogate about identity, real names, or private medical information.
+${AUTO_MIRROR_RULE.replace("Answer in", "Ask the follow-up questions in").replace("the user wrote in", "the dreamer wrote in")}`;
 
-export async function checkDreamSufficiencyWithAI(dreamText: string): Promise<DreamSufficiency> {
+export async function checkDreamSufficiencyWithAI(dreamText: string, language?: string): Promise<DreamSufficiency> {
+  const selected = typeof language === "string" ? language.toLowerCase() : "";
+  // A non-English selection forces the output language; otherwise the
+  // questions follow the dreamer's own language.
+  const languageRule =
+    selected && !isEnglish(selected)
+      ? `LANGUAGE: ${languageInstruction(selected)}`
+      : AUTO_MIRROR_RULE.replace("Answer in", "Ask the follow-up questions in").replace(
+          "the user wrote in",
+          "the dreamer wrote in",
+        );
   const response = await callAI({
-    systemPrompt: SUFFICIENCY_SYSTEM,
+    systemPrompt: `${SUFFICIENCY_SYSTEM}\n\n${languageRule}`,
     prompt: `Dream description from the user:\n"""\n${clipDream(dreamText)}\n"""\n\nEvaluate sufficiency and respond with the JSON object only.`,
     temperature: 0.2,
     maxTokens: 500,
@@ -119,6 +131,8 @@ export interface DreamInterpretation {
   symbols: { name: string; meaning: string; quote: string }[];
   themes: { name: string; meaning: string; quote: string }[];
   emotions: { name: string; note: string; quote: string }[];
+  /** Output language used ("en" when default). */
+  language?: string;
   /** Optional traditional/astrological layer — only present when requested. */
   traditional?: TraditionalAstrologicalInterpretation;
 }
@@ -153,7 +167,8 @@ Respond with ONLY a JSON object:
 Rules:
 - Every "quote" MUST be copied VERBATIM from the dream text. Never invent or paraphrase quotes.
 - 0-5 symbols, 0-3 themes, 0-4 emotions. Prefer precision over quantity.
-- If a quote cannot be verbatim, omit that entry.`;
+- If a quote cannot be verbatim, omit that entry.
+LANGUAGE: Write "summary" and every "meaning"/"note" in the SAME language and script the dreamer wrote in — match their style exactly. Hindi in Devanagari stays Devanagari; Hindi or the Hindi-English mix (Hinglish) written in Roman letters stays Roman-script Hinglish and must NEVER be converted to Devanagari; Spanish stays Spanish; any other language as the user used it. Keep "name" labels short and recognizable. Quotes stay verbatim as written in the dream text.`;
 
 const TRADITIONAL_ASTROLOGY_RULES = `Additionally include a "traditional" key with traditional/astrological dream-symbol meanings:
 "traditional": { "intro": "1 sentence noting these are traditional/cultural symbolic associations and that meanings can vary across traditions", "symbols": [{ "symbol": "short label", "meaning": "1-2 sentences on the meaning traditionally or astrologically associated with this symbol", "contextNote": "1 sentence on how THIS dream's context may color or shift that meaning", "quote": "verbatim phrase from the dream text proving the symbol is present" }...] }
@@ -172,13 +187,18 @@ export interface GroundedSymbol {
 
 export async function interpretDreamWithAI(
   dreamText: string,
-  options?: { includeTraditionalAstrology?: boolean },
+  options?: { includeTraditionalAstrology?: boolean; language?: string },
 ): Promise<DreamInterpretation> {
   const includeTraditional = options?.includeTraditionalAstrology === true;
+  const selected = typeof options?.language === "string" ? options.language.toLowerCase() : "";
+  // Explicit non-English selection wins; otherwise mirror the dreamer's language.
+  const languageRule = selected && !isEnglish(selected)
+    ? `LANGUAGE OVERRIDE: ${languageInstruction(selected)} This overrides any earlier language instruction.`
+    : "";
   const response = await callAI({
-    systemPrompt: includeTraditional
-      ? `${INTERPRETATION_SYSTEM}\n\n${TRADITIONAL_ASTROLOGY_RULES}`
-      : INTERPRETATION_SYSTEM,
+    systemPrompt: `${includeTraditional ? `${INTERPRETATION_SYSTEM}\n\n${TRADITIONAL_ASTROLOGY_RULES}` : INTERPRETATION_SYSTEM}${
+      languageRule ? `\n\n${languageRule}` : ""
+    }`,
     prompt: `Dream description:\n"""\n${clipDream(dreamText)}\n"""\n\nRespond with the JSON object only${includeTraditional ? ", including the optional \"traditional\" key" : ""}.`,
     temperature: 0.7,
     // Slightly higher budget only when the traditional layer is requested.
@@ -257,6 +277,7 @@ export async function interpretDreamWithAI(
     symbols: grounded(pick(parsed.symbols)).map(({ name, meaning, quote }) => ({ name, meaning, quote })),
     themes: grounded(pick(parsed.themes)).map(({ name, meaning, quote }) => ({ name, meaning, quote })),
     emotions: grounded(pick(parsed.emotions)).map(({ name, meaning: note, quote }) => ({ name, note, quote })),
+    language: selected && !isEnglish(selected) ? selected : undefined,
     ...(traditional ? { traditional } : {}),
   };
 }

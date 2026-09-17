@@ -9,6 +9,7 @@ import {
   type DreamSufficiency,
   type DreamInterpretation,
 } from "@/lib/ai/dreamAI";
+import { isEnglish, localizeLabOutput } from "@/lib/ai/language";
 
 export type LabStatus = "EXPERIMENTAL" | "BETA" | "ACTIVE" | "DISABLED" | "ARCHIVED" | "READY" | "COMING_SOON";
 
@@ -235,7 +236,7 @@ const dreamAnalyzer: Handler = async (text, config, ctx) => {
   const collected: Record<string, string> = { narrative: text };
   let sufficiency: DreamSufficiency | null = null;
   try {
-    sufficiency = await checkDreamSufficiencyWithAI(text);
+    sufficiency = await checkDreamSufficiencyWithAI(text, config.language as string | undefined);
   } catch {
     // AI detail-check failure must not block the analysis; the interpretation
     // step below still enforces its own error handling.
@@ -249,7 +250,10 @@ const dreamAnalyzer: Handler = async (text, config, ctx) => {
   let interpretation: DreamInterpretation | null = null;
   let aiFailed = false;
   try {
-    interpretation = await interpretDreamWithAI(text, { includeTraditionalAstrology });
+    interpretation = await interpretDreamWithAI(text, {
+      includeTraditionalAstrology,
+      language: config.language as string | undefined,
+    });
   } catch {
     aiFailed = true;
   }
@@ -1407,6 +1411,26 @@ export async function runLab(payload: LabRunPayload): Promise<LabOutput> {
     disclaimer:
       "Lab outputs are isolated experimental results and do not affect production audit results. Lab status indicates maturity, not availability guarantees.",
   };
+
+  /* Language handling (all Labs):
+   * - Dream AI Analyzer already generates in the user\x27s/selected language
+   *   (its AI findings carry verbatim dream quotes, so they must not be
+   *   rewritten).
+   * - Every other Lab generates English strings from deterministic rules;
+   *   when a non-English output is requested, ONE localization call
+   *   rewrites summary/notes/finding text. It throws on AI failure so the
+   *   route refunds credits instead of returning a half-localized result. */
+  const selectedLanguage =
+    typeof payload.config?.language === "string" ? payload.config.language.toLowerCase() : "";
+  if (payload.labSlug !== "dream-ai-analyzer" && selectedLanguage && !isEnglish(selectedLanguage)) {
+    const localized = await localizeLabOutput(
+      { summary: output.summary, metrics: output.metrics, findings: output.findings, notes: output.notes },
+      selectedLanguage,
+    );
+    output.summary = localized.summary;
+    output.findings = localized.findings;
+    output.notes = localized.notes;
+  }
 
   /* Pass through dream-specific fields if present */
   if (result.similarDreams) {

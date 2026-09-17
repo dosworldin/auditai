@@ -19,6 +19,7 @@
  */
 
 import { callAI } from "@/lib/ai/provider";
+import { AUTO_MIRROR_RULE, isEnglish, languageInstruction, languageName, resolveLanguage } from "@/lib/ai/language";
 import type { Finding, Severity, RiskLevel } from "@/lib/engine/types";
 
 export interface SemanticInput {
@@ -36,8 +37,10 @@ export interface SemanticInput {
   safetyDomain: string;
   /** Cap on returned findings. */
   maxFindings: number;
-  /** User-selected report language. */
+  /** User-selected report language ("en" default; "hinglish", "hi", etc.). */
   language?: string;
+  /** First ~2000 chars of the input text — used only for auto language detection. */
+  inputPreview?: string;
 }
 
 export interface SemanticResult {
@@ -80,10 +83,17 @@ function buildUserPrompt(input: SemanticInput): string {
       : input.secondText
     : undefined;
 
+  // Only state an explicit REPORT LANGUAGE when the user forced one; with the
+  // auto/English default the system-prompt mirror rule decides (it follows
+  // the document's language), so the two never contradict each other.
+  const forcedLang =
+    typeof input.language === "string" && input.language.toLowerCase() !== "en" && !isEnglish(input.language.toLowerCase())
+      ? languageName(input.language.toLowerCase())
+      : "";
+
   return `TOOL: ${input.toolName} (${input.toolSlug})
 DOMAIN: ${input.safetyDomain}
-ANALYSIS OBJECTIVE / RULES: ${input.toolContext}
-REPORT LANGUAGE: ${input.language ?? "en"}
+ANALYSIS OBJECTIVE / RULES: ${input.toolContext}${forcedLang ? `\nREPORT LANGUAGE: ${forcedLang}` : ""}
 
 DETERMINISTIC FINDINGS ALREADY REPORTED (do NOT duplicate these):
 ${existing}
@@ -216,7 +226,18 @@ export async function runSemanticAnalysis(
   input: SemanticInput,
 ): Promise<SemanticResult | null> {
   try {
-    const systemPrompt = COMMON_SYSTEM_PROMPT.replace("{{MAX}}", String(input.maxFindings));
+    const lang = resolveLanguage(input.language, input.inputPreview);
+    // English: unchanged zero-overhead behavior. Other languages: the chosen
+    // language WINS (explicit user choice), and the answer must follow the
+    // language the user wrote in when they left it on auto/English.
+    const languageRule = isEnglish(lang)
+      ? input.inputPreview
+        ? AUTO_MIRROR_RULE
+        : ""
+      : `LANGUAGE: ${languageInstruction(lang)}`;
+    const systemPrompt = `${COMMON_SYSTEM_PROMPT.replace("{{MAX}}", String(input.maxFindings))}${
+      languageRule ? `\n\n${languageRule}` : ""
+    }`;
     const response = await callAI({
       prompt: buildUserPrompt(input),
       systemPrompt,
