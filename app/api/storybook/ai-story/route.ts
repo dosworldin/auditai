@@ -21,7 +21,16 @@ export const maxDuration = 60;
 const LANGUAGES: Record<string, string> = {
   en: "simple English",
   hi: "simple Hindi (Devanagari script)",
+  hinglish:
+    "Hinglish — Hindi written in Roman (Latin) script, naturally mixed with common English words. NEVER use Devanagari script.",
   es: "simple Spanish",
+  fr: "simple French",
+  pt: "simple Portuguese",
+  ar: "simple Arabic",
+  bn: "simple Bengali",
+  ta: "simple Tamil",
+  mr: "simple Marathi (Devanagari script)",
+  ur: "simple Urdu",
 };
 
 const TONES: Record<string, string> = {

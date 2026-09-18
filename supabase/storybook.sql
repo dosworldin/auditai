@@ -11,6 +11,9 @@ create table if not exists public.storybook_orders (
   -- Story configuration
   child_name text not null,
   child_age integer,
+  -- Free-text age/audience when the entry is not a plain number:
+  -- "All ages", group sessions, teens, adults, class names, etc.
+  child_age_text text,
   gender text not null default 'unspecified',
   theme text not null default 'adventure',
   art_style text not null default 'watercolor',
@@ -42,6 +45,7 @@ create index if not exists storybook_orders_status_idx
 -- ---------------------------------------------------------------------------
 -- Later additions (idempotent ALTERs — safe to re-run on existing tables)
 -- ---------------------------------------------------------------------------
+alter table public.storybook_orders add column if not exists child_age_text text;
 alter table public.storybook_orders add column if not exists voice_requested boolean not null default false;
 alter table public.storybook_orders add column if not exists voice_status text;
 alter table public.storybook_orders add column if not exists voice_name text;

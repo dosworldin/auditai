@@ -111,7 +111,7 @@ interface SampleStorySummary {
   emoji: string;
   artStyle: string;
   ageRange: string;
-  pages: { pageNumber: number; text: string; imageUrl: string }[];
+  pages: { pageNumber: number; text: string; imageUrl: string | null }[];
   ready: boolean;
 }
 
@@ -202,7 +202,10 @@ function SampleStoriesSection() {
               <span className="text-2xl" role="img" aria-label={s.title}>{s.emoji}</span>
               <p className="mt-2 text-sm font-semibold text-foreground">{s.title}</p>
               <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{s.tagline}</p>
-              <div className="mt-2"><Badge tone="neutral">{s.ageRange}</Badge></div>
+              <div className="mt-2 flex items-center gap-2">
+                <Badge tone="neutral">{s.ageRange}</Badge>
+                {!s.ready ? <Badge tone="info">Illustrations coming soon</Badge> : null}
+              </div>
             </button>
           ))}
         </div>
@@ -212,8 +215,15 @@ function SampleStoriesSection() {
             <div className="space-y-4">
               {open.pages.map((p) => (
                 <div key={p.pageNumber} className="overflow-hidden rounded-xl border border-border">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={p.imageUrl} alt={`Sample page ${p.pageNumber}`} className="aspect-[4/3] w-full object-cover" />
+                  {p.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={p.imageUrl} alt={`Sample page ${p.pageNumber}`} className="aspect-[4/3] w-full object-cover" />
+                  ) : (
+                    <div className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-2 bg-secondary/40 text-muted-foreground">
+                      <BookOpen className="h-8 w-8" />
+                      <p className="text-xs">Illustration coming soon</p>
+                    </div>
+                  )}
                   <p className="p-4 text-sm leading-relaxed text-foreground">{p.text}</p>
                 </div>
               ))}
@@ -236,6 +246,7 @@ function AiStoryTools() {
   const [problem, setProblem] = useState("");
   const [tone, setTone] = useState("warm");
   const [words, setWords] = useState(250);
+  const [language, setLanguage] = useState("en");
   const [storyText, setStoryText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -248,7 +259,7 @@ function AiStoryTools() {
       const res = await fetch("/api/storybook/ai-story", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ hero, world, problem, tone, words, language: "en" }),
+        body: JSON.stringify({ hero, world, problem, tone, words, language }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) { setError(data?.error ?? "Could not write the story."); return; }
@@ -302,6 +313,24 @@ function AiStoryTools() {
                   <option value="mysterious">Gently mysterious</option>
                 </Select>
               </Field>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Story language" help="The story is written in this language">
+                <Select value={language} onChange={(e) => setLanguage(e.target.value)}>
+                  <option value="en">English</option>
+                  <option value="hi">हिन्दी (Hindi)</option>
+                  <option value="hinglish">Hinglish (Roman script)</option>
+                  <option value="es">Español</option>
+                  <option value="fr">Français</option>
+                  <option value="pt">Português</option>
+                  <option value="ar">العربية (Arabic)</option>
+                  <option value="bn">বাংলা (Bengali)</option>
+                  <option value="ta">தமிழ் (Tamil)</option>
+                  <option value="mr">मराठी (Marathi)</option>
+                  <option value="ur">اردو (Urdu)</option>
+                </Select>
+              </Field>
+              <div />
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="World / setting (optional)"><Input value={world} onChange={(e) => setWorld(e.target.value)} maxLength={300} placeholder="e.g. a floating library above the clouds" /></Field>
@@ -359,6 +388,7 @@ function AiStoryTools() {
 function CreateWizard({ onCreated, credits }: { onCreated: (id: string) => void; credits: number | null }) {
   const [childName, setChildName] = useState("");
   const [childAge, setChildAge] = useState("5");
+  const [customAge, setCustomAge] = useState("");
   const [gender, setGender] = useState("unspecified");
   const [theme, setTheme] = useState("adventure");
   const [artStyle, setArtStyle] = useState("watercolor");
@@ -389,7 +419,7 @@ function CreateWizard({ onCreated, credits }: { onCreated: (id: string) => void;
     try {
       const form = new FormData();
       form.set("childName", childName.trim());
-      form.set("childAge", childAge);
+      form.set("childAge", childAge === "custom" ? customAge.trim() : childAge);
       form.set("gender", gender);
       form.set("theme", theme);
       form.set("artStyle", artStyle);
@@ -426,13 +456,34 @@ function CreateWizard({ onCreated, credits }: { onCreated: (id: string) => void;
             <Input value={childName} onChange={(e) => setChildName(e.target.value)} placeholder="e.g. Aarav" maxLength={40} />
           </Field>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Age">
+            <Field
+            label="Age / audience"
+            help="Any age works — or describe the group, e.g. “Class 7”, “Family reading”, “School library”."
+          >
+            {childAge === "custom" ? (
+              <div className="flex gap-2">
+                <Input
+                  value={customAge}
+                  onChange={(e) => setCustomAge(e.target.value)}
+                  placeholder="e.g. 15, Adult, Class 7-B, Family reading"
+                  maxLength={80}
+                />
+                <Button type="button" variant="ghost" size="sm" onClick={() => setChildAge("5")}>
+                  Cancel
+                </Button>
+              </div>
+            ) : (
               <Select value={childAge} onChange={(e) => setChildAge(e.target.value)}>
                 {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => (
                   <option key={n} value={String(n)}>{n}</option>
                 ))}
+                <option value="13-17">13–17 (teen)</option>
+                <option value="18+">18+ (adult)</option>
+                <option value="All ages">All ages</option>
+                <option value="custom">Other / write your own…</option>
               </Select>
-            </Field>
+            )}
+          </Field>
             <Field label="Hero pronouns">
               <Select value={gender} onChange={(e) => setGender(e.target.value)}>
                 <option value="unspecified">They</option>

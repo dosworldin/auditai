@@ -121,12 +121,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid theme, style, language, or gender option." }, { status: 400 });
   }
   let childAge: number | null = null;
+  let childAgeText: string | null = null;
   if (childAgeRaw) {
     const n = Number(childAgeRaw);
-    if (!Number.isInteger(n) || n < 1 || n > 12) {
-      return NextResponse.json({ error: "Child age must be between 1 and 12." }, { status: 400 });
+    if (Number.isInteger(n) && n >= 1 && n <= 120) {
+      childAge = n;
+    } else {
+      // Not a plain number 1-120: accept as free-text age/audience —
+      // "All ages", groups, teens, adults, class names, etc.
+      childAgeText = childAgeRaw.slice(0, 80);
     }
-    childAge = n;
   }
   const pageCount = Number.isInteger(pageCountRaw)
     ? Math.min(settings.maxPageCount, Math.max(settings.minPageCount, pageCountRaw))
@@ -173,6 +177,7 @@ export async function POST(request: Request) {
       status: "draft",
       child_name: childName,
       child_age: childAge,
+      child_age_text: childAgeText,
       gender,
       theme,
       art_style: artStyle,

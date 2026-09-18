@@ -22,14 +22,14 @@ export async function GET() {
       const pages = s.pages.map((p, i) => ({
         pageNumber: i + 1,
         text: p.text,
-        imageUrl: `/api/storybook/samples/${s.slug}/page-image?page=${i + 1}`,
+        imageUrl: seeded ? `/api/storybook/samples/${s.slug}/page-image?page=${i + 1}` : null,
       }));
 
       // Cheap readiness check on page 1 only (single object head).
       const { data } = await admin.storage
         .from("storybook-assets")
         .list(`samples/${s.slug}`, { limit: 2, search: "p1.png" });
-      const seeded = Boolean(data && data.length > 0);
+      const seeded = Boolean(data && data.some((o) => o.name === "p1.png"));
 
       return {
         slug: s.slug,

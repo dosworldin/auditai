@@ -201,6 +201,32 @@ export default function AdminPage() {
     finally { setSbLoading(false); }
   }, []);
 
+  const [seedingSamples, setSeedingSamples] = useState(false);
+  const [seedMessage, setSeedMessage] = useState("");
+  const seedSampleIllustrations = async () => {
+    setSeedingSamples(true);
+    setSeedMessage("");
+    try {
+      const res = await fetch("/api/storybook/samples/seed", { method: "POST" });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.ok) {
+        setSeedMessage("All sample illustrations generated ✅");
+      } else {
+        const failed = (data?.results ?? []).filter((r: { ok: boolean }) => !r.ok);
+        setSeedMessage(
+          failed.length > 0
+            ? `Some pages failed: ${failed.slice(0, 3).map((r: { error?: string }) => r.error).join(" | ")}`
+            : data?.error ?? "Seeding failed — check the AI image provider key.",
+        );
+      }
+      setTimeout(() => setSeedMessage(""), 8000);
+    } catch {
+      setSeedMessage("Network error while seeding samples.");
+    } finally {
+      setSeedingSamples(false);
+    }
+  };
+
   useEffect(() => {
     if (!authReady || tab !== "storybook") return;
     loadStorybookOrders();
@@ -1567,6 +1593,22 @@ export default function AdminPage() {
                       />
                     </div>
                   ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader
+                title="Sample illustrations"
+                subtitle="One-time AI generation of the 4 readymade sample books (8 images). Missing images make sample thumbnails load forever."
+              />
+              <CardContent>
+                <div className="flex flex-wrap items-center gap-3">
+                  {seedMessage ? <span className="text-xs text-muted-foreground">{seedMessage}</span> : null}
+                  <Button variant="outline" size="sm" onClick={seedSampleIllustrations} disabled={seedingSamples}>
+                    {seedingSamples ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    Generate sample illustrations
+                  </Button>
                 </div>
               </CardContent>
             </Card>

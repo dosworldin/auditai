@@ -2,12 +2,12 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/db/supabase-server";
 import { requireAdmin } from "@/lib/auth/session";
 import { getStorybookSettings } from "@/lib/storybook/settings";
-import { getSample, sampleImagePath } from "@/lib/storybook/samples";
+import { SAMPLE_STORIES, sampleImagePath } from "@/lib/storybook/samples";
 import { generateIllustration } from "@/lib/storybook/illustrate";
 import { artStylePrompt } from "@/lib/storybook/story";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 /**
  * POST /api/storybook/samples/seed — ADMIN ONLY.
@@ -15,8 +15,9 @@ export const maxDuration = 120;
  * provider chain as real orders (Gemini image → Leonardo fallback). Each
  * sample has a pre-written cartoon hero description, so no photo is needed.
  * Idempotent: pages that already exist in the bucket are skipped.
+ * Optional JSON body { slug: "..." } seeds a single sample.
  */
-export async function POST(_request: Request) {
+export async function POST(request: Request) {
   try {
     await requireAdmin();
   } catch (e: unknown) {
@@ -24,13 +25,21 @@ export async function POST(_request: Request) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Unauthorized" }, { status });
   }
 
+  let onlySlug: string | null = null;
+  try {
+    const body = (await request.json()) as { slug?: unknown } | null;
+    if (body && typeof body.slug === "string" && body.slug.trim()) onlySlug = body.slug.trim();
+  } catch {
+    // no body → seed everything
+  }
+
   const admin = await getSupabaseAdmin();
   const settings = await getStorybookSettings();
 
   const results: { slug: string; page: number; ok: boolean; error?: string }[] = [];
 
-  for (const sample of [getSample("luna-and-the-moon-rocket"), getSample("the-tea-shop-at-the-end-of-the-lane"), getSample("the-dragon-who-was-scared-of-mornings"), getSample("grandmas-secret-recipe")]) {
-    if (!sample) continue;
+  for (const sample of SAMPLE_STORIES) {
+    if (onlySlug && sample.slug !== onlySlug) continue;
     for (let i = 0; i < sample.pages.length; i++) {
       const pageNumber = i + 1;
       const path = sampleImagePath(sample.slug, pageNumber);

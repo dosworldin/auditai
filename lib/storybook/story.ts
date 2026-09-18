@@ -82,9 +82,25 @@ function extractJson(content: string): unknown | null {
   }
 }
 
+/**
+ * Human-readable audience descriptor from the stored age fields.
+ * Supports a numeric age, a free-text age ("18+", "Adult", "14"), and group
+ * audiences ("Class 7-B", "School library session", "Family reading").
+ */
+export function audienceDescriptor(age: number | null, ageText: string | null): string {
+  if (age != null) return `age ${age}`;
+  const t = (ageText ?? "").trim();
+  if (!t) return "age 6 (young child)";
+  const n = Number(t);
+  if (Number.isFinite(n) && n >= 1 && n <= 120) return `age ${Math.round(n)}`;
+  return t;
+}
+
 export async function generateStory(options: {
   childName: string;
   age: number | null;
+  /** Free-text age/audience when the entry is not a plain number. */
+  ageText?: string | null;
   gender: string;
   theme: string;
   language: string;
@@ -92,9 +108,22 @@ export async function generateStory(options: {
   storyIdea: string | null;
 }): Promise<StoryResult> {
   const { childName, age, gender, theme, language, pageCount, storyIdea } = options;
+  const ageText = options.ageText ?? null;
 
+  const audience = audienceDescriptor(age, ageText);
+  const isGroup = age == null && /\bgroup|class|school|family|team|audience|students|library/i.test(ageText ?? "");
   const ageBand =
-    age == null ? "4-8" : age <= 5 ? "3-5" : age <= 8 ? "6-8" : "9-12";
+    age == null
+      ? isGroup
+        ? "mixed-age group"
+        : "4-8"
+      : age <= 5
+        ? "3-5"
+        : age <= 8
+          ? "6-8"
+          : age <= 12
+            ? "9-12"
+            : "teen/adult";
   const pronoun =
     gender === "boy" ? "he" : gender === "girl" ? "she" : "they";
   const themeText = THEMES[theme] ?? THEMES.adventure;
@@ -110,13 +139,13 @@ export async function generateStory(options: {
     ? `The parent suggested this idea — weave it in naturally: "${esc(storyIdea.slice(0, 300))}".`
     : "";
 
-  const prompt = `Create a ${pageCount}-page children's picture book for a child named ${childName} (age band ${ageBand}; the main character is "${childName}", ${pronoun} is the hero of every scene).
+  const prompt = `Create a ${pageCount}-page illustrated storybook for a hero named ${childName} (audience: ${audience}; the main character is "${childName}", ${pronoun} is the hero of every scene).${isGroup ? ` The book will be read aloud to a GROUP (${audience}) — keep every scene engaging for listeners of different ages at once.` : ""}
 
 Theme: ${themeText}. ${ideaLine}
 ${languageLine}
 
 STRICT RULES:
-- ${pageCount} pages exactly. Each page: 2-4 simple sentences, read-aloud rhythm, age ${ageBand} vocabulary.
+- ${pageCount} pages exactly. Each page: 2-4 simple sentences, read-aloud rhythm, vocabulary right for ${audience}.
 - Page 1 introduces ${childName}; the last page ends warmly (home, sleep, or celebration).
 - NEVER describe ${childName}'s specific appearance (no hair/eye/skin details) — the illustrator uses a reference photo for likeness. Refer to the hero only as ${childName}.
 - The "illustration" field is a scene description for an illustrator: setting, action, mood, supporting characters/creatures, props, time of day. Always include ${childName} as the main subject, but describe appearance only generically ("a young child in a yellow raincoat").

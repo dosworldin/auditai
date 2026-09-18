@@ -36,6 +36,7 @@ export interface StorybookOrderRow {
   status: OrderStatus;
   child_name: string;
   child_age: number | null;
+  child_age_text: string | null;
   gender: string;
   theme: string;
   art_style: string;
@@ -185,6 +186,7 @@ async function stageStory(order: StorybookOrderRow): Promise<StorybookOrderRow |
   const story = await generateStory({
     childName: order.child_name,
     age: order.child_age,
+    ageText: order.child_age_text,
     gender: order.gender,
     theme: order.theme,
     language: order.language,
